@@ -286,6 +286,171 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     }
   }
 
+  // 显示私聊对话框
+  Future<void> _showPrivateMessageDialog(Map<String, dynamic> player) async {
+    final playerName = player['name'] ?? '未知玩家';
+    final playerUUID = player['id'] ?? '未知UUID';
+    final messageController = TextEditingController();
+    final translateParamsController = TextEditingController();
+    final currentContext = context;
+    bool isTranslatable = false;
+    bool isOverlay = false;
+      showDialog(
+      context: currentContext,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => Dialog(
+          child: ConstrainedBox(
+            constraints: BoxConstraints(
+              maxWidth: MediaQuery.of(context).size.width * 0.9,
+              maxHeight: MediaQuery.of(context).size.height * 0.8,
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.stretch,
+                children: [
+                  Text('发送私信给 $playerName',
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  const SizedBox(height: 16),
+                  Wrap(
+                    spacing: 8.0,
+                    runSpacing: 8.0,
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text('消息类型:', style: TextStyle(fontWeight: FontWeight.bold)),
+                      ChoiceChip(
+                        label: const Text('普通文本'),
+                        selected: !isTranslatable,
+                        onSelected: (selected) {
+                          setState(() {
+                            isTranslatable = !selected;
+                          });
+                        },
+                      ),
+                      ChoiceChip(
+                        label: const Text('本地化文本'),
+                        selected: isTranslatable,
+                        onSelected: (selected) {
+                          setState(() {
+                            isTranslatable = selected;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: messageController,
+                    decoration: InputDecoration(
+                      labelText: isTranslatable ? '本地化键名' : '私信内容',
+                      hintText: isTranslatable ? 'zh_cn' : '输入要发送的消息',
+                      border: const OutlineInputBorder(),
+                    ),
+                  ),
+                  if (isTranslatable)
+                    Column(
+                      children: [
+                        const SizedBox(height: 16),
+                        TextField(
+                          controller: translateParamsController,
+                          decoration: const InputDecoration(
+                            labelText: '参数列表',
+                            hintText: '使用逗号分隔多个参数，例如: 参数1,参数2',
+                            border: OutlineInputBorder(),
+                          ),
+                        ),
+                      ],
+                    ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Checkbox(
+                        value: isOverlay,
+                        onChanged: (value) {
+                          setState(() {
+                            isOverlay = value ?? false;
+                          });
+                        },
+                      ),
+                      const Flexible(child: Text('在动作栏显示')),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.end,
+                    children: [
+                      TextButton(
+                        onPressed: () => Navigator.pop(context),
+                        child: const Text('取消'),
+                      ),
+                      const SizedBox(width: 8),
+                      TextButton(
+                        onPressed: () async {
+                          // 原有逻辑保持不变...
+                          final message = messageController.text.trim();
+                          if (message.isEmpty) {
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(content: Text('请输入消息内容')),
+                            );
+                            return;
+                          }
+                          Navigator.pop(context);
+                          try {
+                            final Map<String, dynamic> messageData = {};
+                            if (isTranslatable) {
+                              messageData['translatable'] = message;
+                              final paramsText = translateParamsController.text.trim();
+                              if (paramsText.isNotEmpty) {
+                                List<String> params = paramsText.split(',')
+                                    .map((e) => e.trim())
+                                    .where((e) => e.isNotEmpty)
+                                    .toList();
+                                if (params.isNotEmpty) {
+                                  messageData['translatableParams'] = params;
+                                }
+                              }
+                            } else {
+                              messageData['literal'] = message;
+                            }
+                            await widget.callAPI('server/system_message', [
+                              {
+                                'message': messageData,
+                                'overlay': isOverlay,
+                                'receivingPlayers': [
+                                  {
+                                    "name": playerName,
+                                    "id": playerUUID
+                                  }
+                                ]
+                              }
+                            ]);
+                            if (mounted) {
+                              ScaffoldMessenger.of(currentContext).showSnackBar(
+                                SnackBar(content: Text('私信已发送给 $playerName')),
+                              );
+                            }
+                          } catch (e) {
+                            if (mounted) {
+                              ScaffoldMessenger.of(currentContext).showSnackBar(
+                                SnackBar(content: Text('发送私信失败: ${_formatErrorMessage(e)}')),
+                              );
+                            }
+                          }
+                        },
+                        child: const Text('发送'),
+                      ),
+                    ],
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
+  }
+
   // 踢出玩家确认对话框
   Future<void> _showKickConfirmDialog(Map<String, dynamic> player) async {
     final playerName = player['name'] ?? '未知玩家';
@@ -1323,7 +1488,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                 title: Text('私信 ${player['name']}'),
                 onTap: () {
                   Navigator.pop(context);
-                  // 这里可以添加私信玩家的功能
+                  _showPrivateMessageDialog(player);
                 },
               ),
               ListTile(
