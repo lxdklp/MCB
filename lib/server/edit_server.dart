@@ -88,9 +88,6 @@ class EditServerPageState extends State<EditServerPage> {
       return;
     }
     final prefs = await SharedPreferences.getInstance();
-    List<String> servers = prefs.getStringList('servers') ?? [];
-    servers.add(name);
-    await prefs.setStringList('servers', servers);
     List<String> serverConfig = [name, address, port, token];
     await prefs.setStringList('${name}_config', serverConfig);
     LogUtil.log('保存服务器: $name, 地址: $address, 端口: $port, 令牌: $token', level: 'INFO');
@@ -115,7 +112,6 @@ class EditServerPageState extends State<EditServerPage> {
     );
     Navigator.pop(context);
   }
-
 
   // 确认删除对话框
   Future<void> _showDeleteDialog() async {

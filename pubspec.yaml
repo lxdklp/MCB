@@ -38,6 +38,8 @@ dependencies:
   shared_preferences: ^2.5.3
   dynamic_color: ^1.8.1
   package_info_plus: ^9.0.0
+  json_rpc_2: ^4.0.0
+  web_socket_channel: ^3.0.3
 
 dev_dependencies:
   flutter_test:
