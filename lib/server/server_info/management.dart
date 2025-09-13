@@ -40,6 +40,9 @@ class ServerManagementPageState extends State<ServerManagementPage> {
   List<Map<String, dynamic>> _bannedPlayers = [];
   bool _isLoadingBans = false;
   String _bansErrorMessage = '';
+  List<Map<String, dynamic>> _operatorList = [];
+  bool _isLoadingOperators = false;
+  String _operatorsErrorMessage = '';
 
   @override
   void initState() {
@@ -47,11 +50,13 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     _fetchServerStatus();
     _fetchOnlinePlayers();
     _fetchBanList();
+    _fetchOperatorList();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) {
         _fetchServerStatus();
         _fetchOnlinePlayers();
         _fetchBanList();
+        _fetchOperatorList();
       }
     });
   }
@@ -103,13 +108,10 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       _isLoadingPlayers = true;
       _playersErrorMessage = '';
     });
-    
     try {
       final jsonResponse = await widget.callAPI('players');
-      
       if (jsonResponse.containsKey('result')) {
         final result = jsonResponse['result'];
-        
         if (result is List) {
           if (mounted) {
             setState(() {
@@ -122,7 +124,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
               _isLoadingPlayers = false;
             });
           }
-          
           LogUtil.log('获取在线玩家成功: ${_onlinePlayers.length} 名玩家', level: 'INFO');
         } else {
           throw Exception('返回的玩家数据格式无效');
@@ -134,7 +135,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       }
     } catch (e) {
       LogUtil.log('获取在线玩家失败: $e', level: 'ERROR');
-      
       if (mounted) {
         setState(() {
           _isLoadingPlayers = false;
@@ -179,6 +179,46 @@ class ServerManagementPageState extends State<ServerManagementPage> {
         setState(() {
           _isLoadingBans = false;
           _bansErrorMessage = '获取封禁列表失败: ${_formatErrorMessage(e)}';
+        });
+      }
+    }
+  }
+
+  // 获取管理员列表
+  Future<void> _fetchOperatorList() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingOperators = true;
+      _operatorsErrorMessage = '';
+    });
+    try {
+      final jsonResponse = await widget.callAPI('operators');
+      if (jsonResponse.containsKey('result')) {
+        final result = jsonResponse['result'];
+        if (result is List) {
+          if (mounted) {
+            setState(() {
+              _operatorList = List<Map<String, dynamic>>.from(
+                result.map((op) => Map<String, dynamic>.from(op))
+              );
+              _isLoadingOperators = false;
+            });
+          }
+          LogUtil.log('获取管理员列表成功: ${_operatorList.length} 名管理员', level: 'INFO');
+        } else {
+          throw Exception('返回的管理员数据格式无效');
+        }
+      } else if (jsonResponse.containsKey('error')) {
+        throw Exception('服务器错误: ${jsonResponse['error']}');
+      } else {
+        throw Exception('无效的响应格式');
+      }
+    } catch (e) {
+      LogUtil.log('获取管理员列表失败: $e', level: 'ERROR');
+      if (mounted) {
+        setState(() {
+          _isLoadingOperators = false;
+          _operatorsErrorMessage = '获取管理员列表失败: ${_formatErrorMessage(e)}';
         });
       }
     }
@@ -276,9 +316,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     final currentContext = context;
     final reasonController = TextEditingController();
     final sourceController = TextEditingController();
-    // 封禁到期时间
-    DateTime? expiryDate;
-    String formattedExpiryDate = '永久封禁';
     showDialog(
       context: currentContext,
       builder: (context) => StatefulBuilder(
@@ -402,9 +439,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                 }
               }
             },
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.blue,
-            ),
             child: const Text('解除封禁'),
           ),
         ],
@@ -412,11 +446,10 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     );
   }
 
-  // 添加清空封禁列表确认对话框方法
+  // 清空封禁列表确认对话框
   Future<void> _showClearBansConfirmDialog() async {
     final currentContext = context;
     final bannedCount = _bannedPlayers.length;
-    
     showDialog(
       context: currentContext,
       builder: (context) => AlertDialog(
@@ -431,9 +464,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                // 调用清空封禁API
                 await widget.callAPI('bans/clear');
-                
                 if (mounted) {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     const SnackBar(content: Text('已清空所有封禁记录')),
@@ -445,6 +476,202 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                 if (mounted) {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     SnackBar(content: Text('清空封禁列表失败: ${_formatErrorMessage(e)}')),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 移除管理员确认对话框
+  Future<void> _showRemoveOperatorConfirmDialog(Map<String, dynamic> player) async {
+    final playerName = player['name'] ?? '未知玩家';
+    final playerUUID = player['id'] ?? '未知UUID';
+    final currentContext = context;
+    showDialog(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('移除管理员'),
+        content: Text('确定要移除 "$playerName" 的管理员权限吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                // 移除管理员API调用
+                await widget.callAPI('operators/remove', [
+                  {
+                    "player": {
+                      "name": playerName,
+                      "id": playerUUID
+                    }
+                  }
+                ]);
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('已移除 $playerName 的管理员权限')),
+                  );
+                  _fetchOperatorList();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('移除管理员失败: ${_formatErrorMessage(e)}')),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('移除'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 添加管理员对话框
+  Future<void> _showAddOperatorDialog(Map<String, dynamic> player) async {
+    final playerName = player['name'] ?? '未知玩家';
+    final playerUUID = player['id'] ?? '未知UUID';
+    final currentContext = context;
+    int permissionLevel = 4;
+    bool bypassPlayerLimit = false;
+    showDialog(
+      context: currentContext,
+      builder: (context) => StatefulBuilder(
+        builder: (context, setState) => AlertDialog(
+          title: const Text('设置管理员'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('设置 "$playerName" 为服务器管理员'),
+              const SizedBox(height: 16),
+              const Text('权限级别:', style: TextStyle(fontWeight: FontWeight.bold)),
+              const SizedBox(height: 8),
+              SegmentedButton<int>(
+                segments: const [
+                  ButtonSegment<int>(
+                    value: 4,
+                    label: Text('4级'),
+                  ),
+                  ButtonSegment<int>(
+                    value: 3,
+                    label: Text('3级'),
+                  ),
+                  ButtonSegment<int>(
+                    value: 2,
+                    label: Text('2级'),
+                  ),
+                  ButtonSegment<int>(
+                    value: 1,
+                    label: Text('1级'),
+                  ),
+                ],
+                selected: {permissionLevel},
+                onSelectionChanged: (Set<int> newSelection) {
+                  setState(() {
+                    permissionLevel = newSelection.first;
+                  });
+                },
+              ),
+              const Divider(),
+              CheckboxListTile(
+                title: const Text('允许绕过服务器玩家上限'),
+                subtitle: const Text('即使服务器已满，也可以加入'),
+                value: bypassPlayerLimit,
+                onChanged: (value) {
+                  setState(() {
+                    bypassPlayerLimit = value!;
+                  });
+                },
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('取消'),
+            ),
+            TextButton(
+              onPressed: () async {
+                Navigator.pop(context);
+                try {
+                  await widget.callAPI('operators/add', [[
+                    {
+                      "player": {
+                        "name": playerName,
+                        "id": playerUUID
+                      },
+                      "permissionLevel": permissionLevel,
+                      "bypassesPlayerLimit": bypassPlayerLimit
+                    }
+                  ]]);
+                  if (mounted) {
+                    ScaffoldMessenger.of(currentContext).showSnackBar(
+                      SnackBar(content: Text('已将 $playerName 设置为管理员 (权限级别: $permissionLevel)')),
+                    );
+                    _fetchOperatorList();
+                  }
+                } catch (e) {
+                  if (mounted) {
+                    ScaffoldMessenger.of(currentContext).showSnackBar(
+                      SnackBar(content: Text('设置管理员失败: ${_formatErrorMessage(e)}')),
+                    );
+                  }
+                }
+              },
+              child: const Text('确定'),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // 清空管理员列表确认对话框
+  Future<void> _showClearOperatorsConfirmDialog() async {
+    final currentContext = context;
+    final operatorCount = _operatorList.length;
+    showDialog(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('清空管理员列表'),
+        content: Text('确定要清空所有管理员记录吗？\n这将解除对 $operatorCount 名玩家的管理员身份，此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await widget.callAPI('operators/clear');
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    const SnackBar(content: Text('已清空所有管理员')),
+                  );
+                  // 刷新管理员列表
+                  _fetchOperatorList();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('清空管理员列表失败: ${_formatErrorMessage(e)}')),
                   );
                 }
               }
@@ -573,6 +800,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
         _buildPlayersCard(),
         _buildSendMessageCard(),
         _buildBanListCard(),
+        _buildOperatorListCard(),
         _buildControlCard(),
       ],
     );
@@ -712,8 +940,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     );
   }
 
-// 添加构建玩家列表卡片的方法
-
+  // 构建玩家列表卡片
   Widget _buildPlayersCard() {
     return Card(
       child: Padding(
@@ -796,8 +1023,23 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                 },
               ),
               ListTile(
+                leading: const Icon(Icons.group),
+                title: Text('将 ${player['name']} 加入白名单'),
+                onTap: () {
+                  Navigator.pop(context);
+                  // 这里可以添加白名单的功能
+                },
+              ),ListTile(
+                leading: const Icon(Icons.how_to_reg),
+                title: Text('将 ${player['name']} 设为管理员'),
+                onTap: () {
+                  Navigator.pop(context);
+                  _showAddOperatorDialog(player);
+                },
+              ),
+              ListTile(
                 leading: const Icon(Icons.person_remove),
-                title: const Text('踢出玩家'),
+                title: Text('将 ${player['name']} 踢出'),
                 onTap: () async {
                   Navigator.pop(context);
                   await _showKickConfirmDialog(player);
@@ -805,7 +1047,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
               ),
               ListTile(
                 leading: const Icon(Icons.block),
-                title: const Text('封禁玩家'),
+                title: Text('将 ${player['name']} 封禁'),
                 onTap: () async {
                   Navigator.pop(context);
                   await _showBanConfirmDialog(player);
@@ -832,24 +1074,19 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                 const Text('封禁列表', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
                 Row(
                   children: [
-                    // 添加清空按钮
                     IconButton(
                       icon: const Icon(Icons.delete_sweep),
                       onPressed: _bannedPlayers.isEmpty || _isLoadingBans ? null : _showClearBansConfirmDialog,
-                      tooltip: '清空封禁列表',
                     ),
-                    // 保留原有的刷新按钮
                     IconButton(
                       icon: const Icon(Icons.refresh),
                       onPressed: _isLoadingBans ? null : _fetchBanList,
-                      tooltip: '刷新封禁列表',
                     ),
                   ],
                 ),
               ],
             ),
             const SizedBox(height: 8),
-            // 其余内容保持不变...
             if (_isLoadingBans)
               const Center(
                 child: Padding(
@@ -872,38 +1109,29 @@ class ServerManagementPageState extends State<ServerManagementPage> {
               )
             else
               ListView.builder(
-                // 保持现有代码不变...
                 shrinkWrap: true,
                 physics: const NeverScrollableScrollPhysics(),
                 itemCount: _bannedPlayers.length,
                 itemBuilder: (context, index) {
-                  // 保持现有代码不变...
                   final ban = _bannedPlayers[index];
                   final player = ban['player'] as Map<String, dynamic>;
                   final playerName = player['name'] ?? '未知玩家';
-                  
-                  // 处理可能是对象或字符串的reason字段
                   String reasonText = '未指定原因';
                   if (ban.containsKey('reason')) {
                     if (ban['reason'] is Map) {
-                      reasonText = (ban['reason'] as Map).containsKey('literal') 
-                          ? ban['reason']['literal'].toString() 
+                      reasonText = (ban['reason'] as Map).containsKey('literal')
+                          ? ban['reason']['literal'].toString()
                           : ban['reason'].toString();
                     } else {
                       reasonText = ban['reason'].toString();
                     }
                   }
-                  
                   final source = ban['source'] ?? '未知来源';
-                  
-                  // 处理到期时间
                   String expiryText = '永久封禁';
                   if (ban.containsKey('expires') && ban['expires'] != null) {
                     expiryText = '到期时间: ${ban['expires']}';
                   }
-                  
                   return Card(
-                    // 保持现有代码不变...
                     margin: const EdgeInsets.only(bottom: 8.0),
                     child: Padding(
                       padding: const EdgeInsets.all(12.0),
@@ -912,8 +1140,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                         children: [
                           Row(
                             children: [
-                              const Icon(Icons.person_off, color: Colors.red),
-                              const SizedBox(width: 8),
                               Expanded(
                                 child: Text(
                                   playerName,
@@ -931,10 +1157,10 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                             ],
                           ),
                           const Divider(),
-                          _buildBanInfoRow('ID', player['id'] ?? '未知ID'),
-                          _buildBanInfoRow('原因', reasonText),
-                          _buildBanInfoRow('执行人', source),
-                          _buildBanInfoRow('状态', expiryText),
+                          _buildInfoRow('ID', player['id'] ?? '未知ID'),
+                          _buildInfoRow('原因', reasonText),
+                          _buildInfoRow('执行人', source),
+                          _buildInfoRow('状态', expiryText),
                         ],
                       ),
                     ),
@@ -947,27 +1173,103 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     );
   }
 
-  // 封禁信息行构建
-  Widget _buildBanInfoRow(String label, String value) {
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4.0),
-      child: Row(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          SizedBox(
-            width: 60,
-            child: Text(
-              label,
-              style: const TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Colors.grey,
-              ),
+  // 管理员列表卡片构建
+  Widget _buildOperatorListCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('管理员列表', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                  IconButton(
+                      icon: const Icon(Icons.delete_sweep),
+                      onPressed: _operatorList.isEmpty || _isLoadingOperators ? null : _showClearOperatorsConfirmDialog,
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.refresh),
+                    onPressed: _isLoadingOperators ? null : _fetchOperatorList,
+                  ),
+                  ],
+                ),
+              ],
             ),
-          ),
-          Expanded(
-            child: Text(value),
-          ),
-        ],
+            const SizedBox(height: 8),
+            if (_isLoadingOperators)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_operatorsErrorMessage.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  _operatorsErrorMessage,
+                  style: TextStyle(color: Colors.red[700]),
+                ),
+              )
+            else if (_operatorList.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text('当前没有管理员'),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _operatorList.length,
+                itemBuilder: (context, index) {
+                  final op = _operatorList[index];
+                  final player = op['player'] as Map<String, dynamic>;
+                  final playerName = player['name'] ?? '未知玩家';
+                  final permLevel = op['permissionLevel'] ?? 0;
+                  final bypassLimit = op['bypassesPlayerLimit'] ?? false;
+                  String permLevelText = '权限等级: $permLevel';
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8.0),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  playerName,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => _showRemoveOperatorConfirmDialog(player),
+                                tooltip: '移除管理员',
+                              ),
+                            ],
+                          ),
+                          const Divider(),
+                          _buildInfoRow('UUID', player['id'] ?? '未知ID'),
+                          _buildInfoRow('权限等级', permLevelText),
+                          _buildInfoRow('绕过玩家上限', bypassLimit ? '可绕过玩家上限' : '不可绕过玩家上限'),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
       ),
     );
   }
