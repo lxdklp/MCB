@@ -2,6 +2,8 @@ import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:web_socket_channel/web_socket_channel.dart';
+import 'dart:convert';
+import 'package:crypto/crypto.dart';
 import 'package:mcb/function/log.dart';
 
 class ServerManagementPage extends StatefulWidget {
@@ -43,6 +45,9 @@ class ServerManagementPageState extends State<ServerManagementPage> {
   List<Map<String, dynamic>> _operatorList = [];
   bool _isLoadingOperators = false;
   String _operatorsErrorMessage = '';
+  List<Map<String, dynamic>> _allowlist = [];
+  bool _isLoadingAllowlist = false;
+  String _allowlistErrorMessage = '';
 
   @override
   void initState() {
@@ -51,12 +56,14 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     _fetchOnlinePlayers();
     _fetchBanList();
     _fetchOperatorList();
+    _fetchAllowlist();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
       if (mounted) {
         _fetchServerStatus();
         _fetchOnlinePlayers();
         _fetchBanList();
         _fetchOperatorList();
+        _fetchAllowlist();
       }
     });
   }
@@ -219,6 +226,46 @@ class ServerManagementPageState extends State<ServerManagementPage> {
         setState(() {
           _isLoadingOperators = false;
           _operatorsErrorMessage = '获取管理员列表失败: ${_formatErrorMessage(e)}';
+        });
+      }
+    }
+  }
+
+  // 获取白名单列表
+  Future<void> _fetchAllowlist() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingAllowlist = true;
+      _allowlistErrorMessage = '';
+    });
+    try {
+      final jsonResponse = await widget.callAPI('allowlist');
+      if (jsonResponse.containsKey('result')) {
+        final result = jsonResponse['result'];
+        if (result is List) {
+          if (mounted) {
+            setState(() {
+              _allowlist = List<Map<String, dynamic>>.from(
+                result.map((player) => Map<String, dynamic>.from(player))
+              );
+              _isLoadingAllowlist = false;
+            });
+          }
+          LogUtil.log('获取白名单列表成功: ${_allowlist.length} 名玩家', level: 'INFO');
+        } else {
+          throw Exception('返回的白名单数据格式无效');
+        }
+      } else if (jsonResponse.containsKey('error')) {
+        throw Exception('服务器错误: ${jsonResponse['error']}');
+      } else {
+        throw Exception('无效的响应格式');
+      }
+    } catch (e) {
+      LogUtil.log('获取白名单列表失败: $e', level: 'ERROR');
+      if (mounted) {
+        setState(() {
+          _isLoadingAllowlist = false;
+          _allowlistErrorMessage = '获取白名单列表失败: ${_formatErrorMessage(e)}';
         });
       }
     }
@@ -400,7 +447,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     final playerName = player['name'] ?? '未知玩家';
     final playerUUID = player['id'] ?? '未知UUID';
     final currentContext = context;
-    
     showDialog(
       context: currentContext,
       builder: (context) => AlertDialog(
@@ -415,7 +461,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                // 解除封禁API调用
                 await widget.callAPI('bans/remove', [[
                   {
                     "player": [{
@@ -428,7 +473,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     SnackBar(content: Text('已解除对玩家 $playerName 的封禁')),
                   );
-                  // 刷新封禁列表
                   _fetchBanList();
                 }
               } catch (e) {
@@ -469,7 +513,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     const SnackBar(content: Text('已清空所有封禁记录')),
                   );
-                  // 刷新封禁列表
                   _fetchBanList();
                 }
               } catch (e) {
@@ -509,7 +552,6 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                // 移除管理员API调用
                 await widget.callAPI('operators/remove', [
                   {
                     "player": {
@@ -665,13 +707,274 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     const SnackBar(content: Text('已清空所有管理员')),
                   );
-                  // 刷新管理员列表
                   _fetchOperatorList();
                 }
               } catch (e) {
                 if (mounted) {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     SnackBar(content: Text('清空管理员列表失败: ${_formatErrorMessage(e)}')),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('清空'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 添加玩家到白名单对话框
+  Future<void> _showAddToAllowlistDialog(Map<String, dynamic> player) async {
+    final playerName = player['name'] ?? '未知玩家';
+    final playerUUID = player['id'] ?? '未知UUID';
+    final currentContext = context;
+    showDialog(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('添加到白名单'),
+        content: Text('确定将玩家 "$playerName" 添加到白名单吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await widget.callAPI('allowlist/add', [[
+                  {
+                    "name": playerName,
+                    "id": playerUUID
+                  }
+                ]]);
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('已将 $playerName 添加到白名单')),
+                  );
+                  _fetchAllowlist();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('添加到白名单失败: ${_formatErrorMessage(e)}')),
+                  );
+                }
+              }
+            },
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 添加玩家到白名单对话框
+  Future<void> _showAddCustomizedAllowlistDialog() async {
+    final nameController = TextEditingController();
+    final uuidController = TextEditingController();
+    final currentContext = context;
+    final formKey = GlobalKey<FormState>();
+    // 生成UUID
+    String generateOfflinePlayerUUID(String playerName) {
+      var digest = md5.convert(utf8.encode('OfflinePlayer:$playerName'));
+      String hash = digest.toString();
+      String uuid = '${hash.substring(0, 8)}-${hash.substring(8, 12)}-${hash.substring(12, 16)}-${hash.substring(16, 20)}-${hash.substring(20, 32)}';
+      return uuid;
+    }
+    showDialog(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('添加玩家到白名单'),
+        content: Form(
+          key: formKey,
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              TextFormField(
+                controller: nameController,
+                decoration: const InputDecoration(
+                  labelText: '玩家名称',
+                  hintText: '输入玩家的游戏名称',
+                  border: OutlineInputBorder(),
+                ),
+                validator: (value) {
+                  if (value == null || value.trim().isEmpty) {
+                    return '玩家名称不能为空';
+                  }
+                  return null;
+                },
+              ),
+              const SizedBox(height: 16),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Expanded(
+                    child: TextFormField(
+                      controller: uuidController,
+                      decoration: const InputDecoration(
+                        labelText: '玩家UUID',
+                        hintText: '格式:8-4-4-4-12位字符',
+                        border: OutlineInputBorder(),
+                      ),
+                      validator: (value) {
+                        if (value == null || value.trim().isEmpty) {
+                          return 'UUID不能为空';
+                        }
+                        // 验证UUID格式
+                        final uuidRegex = RegExp(r'^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$');
+                        if (!uuidRegex.hasMatch(value.trim())) {
+                          return 'UUID格式不正确';
+                        }
+                        return null;
+                      },
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.password),
+                    tooltip: '生成UUID',
+                    onPressed: () {
+                      final name = nameController.text.trim();
+                      if (name.isNotEmpty) {
+                        uuidController.text = generateOfflinePlayerUUID(name);
+                      } else {
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('请先输入玩家名称')),
+                        );
+                      }
+                    },
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+              const Text('注意: UUID应为32位带分割线数字与小写字母混合的字符串,点击右侧按钮生成离线模式下玩家的UUID'),
+            ],
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              if (formKey.currentState?.validate() != true) {
+                return;
+              }
+              Navigator.pop(context);
+              final playerName = nameController.text.trim();
+              final playerUUID = uuidController.text.trim();
+              try {
+                await widget.callAPI('allowlist/add', [[
+                  {
+                    "name": playerName,
+                    "id": playerUUID
+                  }
+                ]]);
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('已将 $playerName 添加到白名单')),
+                  );
+                  _fetchAllowlist();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('添加到白名单失败: ${_formatErrorMessage(e)}')),
+                  );
+                }
+              }
+            },
+            child: const Text('添加'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 从白名单移除玩家对话框
+  Future<void> _showRemoveFromAllowlistDialog(Map<String, dynamic> player) async {
+    final playerName = player['name'] ?? '未知玩家';
+    final playerUUID = player['id'] ?? '未知UUID';
+    final currentContext = context;
+    showDialog(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('从白名单移除'),
+        content: Text('确定将玩家 "$playerName" 从白名单中移除吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                // 从白名单移除API调用
+                await widget.callAPI('allowlist/remove', [[
+                  {
+                    "name": playerName,
+                    "id": playerUUID
+                  }
+                ]]);
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('已将 $playerName 从白名单中移除')),
+                  );
+                  _fetchAllowlist();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('从白名单移除失败: ${_formatErrorMessage(e)}')),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('移除'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 清空白名单确认对话框
+  Future<void> _showClearAllowlistConfirmDialog() async {
+    final currentContext = context;
+    final allowlistCount = _allowlist.length;
+    showDialog(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('清空白名单'),
+        content: Text('确定要清空整个白名单吗？\n这将移除 $allowlistCount 名玩家的白名单权限，此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await widget.callAPI('allowlist/clear');
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    const SnackBar(content: Text('已清空白名单')),
+                  );
+                  _fetchAllowlist();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('清空白名单失败: ${_formatErrorMessage(e)}')),
                   );
                 }
               }
@@ -801,6 +1104,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
         _buildSendMessageCard(),
         _buildBanListCard(),
         _buildOperatorListCard(),
+        _buildAllowlistCard(),
         _buildControlCard(),
       ],
     );
@@ -1027,9 +1331,10 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                 title: Text('将 ${player['name']} 加入白名单'),
                 onTap: () {
                   Navigator.pop(context);
-                  // 这里可以添加白名单的功能
+                  _showAddToAllowlistDialog(player);
                 },
-              ),ListTile(
+              ),
+              ListTile(
                 leading: const Icon(Icons.how_to_reg),
                 title: Text('将 ${player['name']} 设为管理员'),
                 onTap: () {
@@ -1231,7 +1536,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                   final playerName = player['name'] ?? '未知玩家';
                   final permLevel = op['permissionLevel'] ?? 0;
                   final bypassLimit = op['bypassesPlayerLimit'] ?? false;
-                  String permLevelText = '权限等级: $permLevel';
+                  String permLevelText = permLevel.toString();
                   return Card(
                     margin: const EdgeInsets.only(bottom: 8.0),
                     child: Padding(
@@ -1261,7 +1566,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                           const Divider(),
                           _buildInfoRow('UUID', player['id'] ?? '未知ID'),
                           _buildInfoRow('权限等级', permLevelText),
-                          _buildInfoRow('绕过玩家上限', bypassLimit ? '可绕过玩家上限' : '不可绕过玩家上限'),
+                          _buildInfoRow('玩家上限', bypassLimit ? '可绕过' : '不可绕过'),
                         ],
                       ),
                     ),
@@ -1341,6 +1646,95 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       widgets.add(Text('解析服务器状态时出错: $e', style: const TextStyle(color: Colors.red)));
     }
     return widgets;
+  }
+
+  // 白名单列表卡片
+  Widget _buildAllowlistCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('白名单', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.add),
+                      onPressed: _showAddCustomizedAllowlistDialog,
+                      tooltip: '添加白名单',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.delete_sweep),
+                      onPressed: _allowlist.isEmpty || _isLoadingAllowlist ? null : _showClearAllowlistConfirmDialog,
+                      tooltip: '清空白名单',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      onPressed: _isLoadingAllowlist ? null : _fetchAllowlist,
+                      tooltip: '刷新白名单',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_isLoadingAllowlist)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_allowlistErrorMessage.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  _allowlistErrorMessage,
+                  style: TextStyle(color: Colors.red[700]),
+                ),
+              )
+            else if (_allowlist.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text('当前白名单为空'),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _allowlist.length,
+                itemBuilder: (context, index) {
+                  final player = _allowlist[index];
+                  final playerName = player['name'] ?? '未知玩家';
+                  final playerId = player['id'] ?? '未知ID';
+                  final isOnline = _onlinePlayers.any((p) =>
+                    p['id'] == playerId || p['name'] == playerName);
+                  return ListTile(
+                    leading: CircleAvatar(
+                      backgroundColor: isOnline ? Colors.green : Colors.grey,
+                      child: Icon(
+                        Icons.person,
+                        color: Colors.white,
+                      ),
+                    ),
+                    title: Text(playerName),
+                    subtitle: Text('ID: $playerId'),
+                    trailing: IconButton(
+                      icon: const Icon(Icons.delete_outline),
+                      onPressed: () => _showRemoveFromAllowlistDialog(player),
+                      tooltip: '从白名单移除',
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
   }
 
   // 信息行组件

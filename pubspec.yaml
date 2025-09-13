@@ -40,6 +40,7 @@ dependencies:
   package_info_plus: ^9.0.0
   json_rpc_2: ^4.0.0
   web_socket_channel: ^3.0.3
+  crypto: ^3.0.6
 
 dev_dependencies:
   flutter_test:

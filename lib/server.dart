@@ -26,10 +26,8 @@ class ServerPageState extends State<ServerPage> {
     setState(() {
       _isLoading = true;
     });
-    
     final prefs = await SharedPreferences.getInstance();
     final List<String> serverNames = prefs.getStringList('servers') ?? [];
-    
     List<Map<String, String>> servers = [];
     for (String name in serverNames) {
       final List<String>? config = prefs.getStringList('${name}_config');
@@ -42,7 +40,6 @@ class ServerPageState extends State<ServerPage> {
         });
       }
     }
-    
     if (mounted) {
       setState(() {
         _serverList = servers;
@@ -57,7 +54,6 @@ class ServerPageState extends State<ServerPage> {
       context,
       MaterialPageRoute(builder: (context) => const AddServerPage()),
     );
-    // 返回后重新加载服务器列表
     _loadServers();
   }
 
@@ -111,11 +107,8 @@ class ServerPageState extends State<ServerPage> {
         return Card(
           margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: ListTile(
-            title: Text(server['name'] ?? '未命名服务器'),
-            subtitle: Text('${server['address']}:${server['port']}'),
-            leading: const CircleAvatar(
-              child: Icon(Icons.storage),
-            ),
+            title: Text('服务器名称: ${server['name'] ?? '未命名服务器'}'),
+            subtitle: Text('RPC地址: ${server['address']}:${server['port']}'),
             onTap: () {
               Navigator.push(
                 context,
