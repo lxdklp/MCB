@@ -48,6 +48,9 @@ class ServerManagementPageState extends State<ServerManagementPage> {
   List<Map<String, dynamic>> _allowlist = [];
   bool _isLoadingAllowlist = false;
   String _allowlistErrorMessage = '';
+  List<Map<String, dynamic>> _ipBannedList = [];
+  bool _isLoadingIpBans = false;
+  String _ipBansErrorMessage = '';
 
   @override
   void initState() {
@@ -55,6 +58,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     _fetchServerStatus();
     _fetchOnlinePlayers();
     _fetchBanList();
+    _fetchIpBanList();
     _fetchOperatorList();
     _fetchAllowlist();
     _refreshTimer = Timer.periodic(const Duration(seconds: 30), (_) {
@@ -62,6 +66,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
         _fetchServerStatus();
         _fetchOnlinePlayers();
         _fetchBanList();
+        _fetchIpBanList();
         _fetchOperatorList();
         _fetchAllowlist();
       }
@@ -186,6 +191,46 @@ class ServerManagementPageState extends State<ServerManagementPage> {
         setState(() {
           _isLoadingBans = false;
           _bansErrorMessage = '获取封禁列表失败: ${_formatErrorMessage(e)}';
+        });
+      }
+    }
+  }
+
+  // 获取 IP 封禁列表
+  Future<void> _fetchIpBanList() async {
+    if (!mounted) return;
+    setState(() {
+      _isLoadingIpBans = true;
+      _ipBansErrorMessage = '';
+    });
+    try {
+      final jsonResponse = await widget.callAPI('ip_bans');
+      if (jsonResponse.containsKey('result')) {
+        final result = jsonResponse['result'];
+        if (result is List) {
+          if (mounted) {
+            setState(() {
+              _ipBannedList = List<Map<String, dynamic>>.from(
+                result.map((ban) => Map<String, dynamic>.from(ban))
+              );
+              _isLoadingIpBans = false;
+            });
+          }
+          LogUtil.log('获取 IP 封禁列表成功: ${_ipBannedList.length} 个 IP 封禁', level: 'INFO');
+        } else {
+          throw Exception('返回的 IP 封禁数据格式无效');
+        }
+      } else if (jsonResponse.containsKey('error')) {
+        throw Exception('服务器错误: ${jsonResponse['error']}');
+      } else {
+        throw Exception('无效的响应格式');
+      }
+    } catch (e) {
+      LogUtil.log('获取 IP 封禁列表失败: $e', level: 'ERROR');
+      if (mounted) {
+        setState(() {
+          _isLoadingIpBans = false;
+          _ipBansErrorMessage = '获取 IP 封禁列表失败: ${_formatErrorMessage(e)}';
         });
       }
     }
@@ -603,6 +648,88 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  // 解除 IP 封禁确认对话框
+  Future<void> _showUnbanIpConfirmDialog(String ip) async {
+    final currentContext = context;
+    showDialog(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('解除 IP 封禁'),
+        content: Text('确定要解除对 IP "$ip" 的封禁吗？'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await widget.callAPI('ip_bans/remove', [ip]);
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('已解除对 IP $ip 的封禁')),
+                  );
+                  _fetchIpBanList();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('解除 IP 封禁失败: ${_formatErrorMessage(e)}')),
+                  );
+                }
+              }
+            },
+            child: const Text('解除封禁'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  // 清空 IP 封禁列表确认对话框
+  Future<void> _showClearIpBansConfirmDialog() async {
+    final currentContext = context;
+    final ipBanCount = _ipBannedList.length;
+    showDialog(
+      context: currentContext,
+      builder: (context) => AlertDialog(
+        title: const Text('清空 IP 封禁列表'),
+        content: Text('确定要清空所有 IP 封禁记录吗？\n这将解除对 $ipBanCount 个 IP 的封禁，此操作无法撤销。'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('取消'),
+          ),
+          TextButton(
+            onPressed: () async {
+              Navigator.pop(context);
+              try {
+                await widget.callAPI('ip_bans/clear');
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    const SnackBar(content: Text('已清空所有 IP 封禁记录')),
+                  );
+                  _fetchIpBanList();
+                }
+              } catch (e) {
+                if (mounted) {
+                  ScaffoldMessenger.of(currentContext).showSnackBar(
+                    SnackBar(content: Text('清空 IP 封禁列表失败: ${_formatErrorMessage(e)}')),
+                  );
+                }
+              }
+            },
+            style: TextButton.styleFrom(
+              foregroundColor: Colors.red,
+            ),
+            child: const Text('清空'),
+          ),
+        ],
       ),
     );
   }
@@ -1270,6 +1397,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
         _buildBanListCard(),
         _buildOperatorListCard(),
         _buildAllowlistCard(),
+        _buildIpBanListCard(),
         _buildControlCard(),
       ],
     );
@@ -1628,6 +1756,113 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                           ),
                           const Divider(),
                           _buildInfoRow('ID', player['id'] ?? '未知ID'),
+                          _buildInfoRow('原因', reasonText),
+                          _buildInfoRow('执行人', source),
+                          _buildInfoRow('状态', expiryText),
+                        ],
+                      ),
+                    ),
+                  );
+                },
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // IP 封禁列表卡片
+  Widget _buildIpBanListCard() {
+    return Card(
+      child: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text('IP 封禁列表', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                Row(
+                  children: [
+                    IconButton(
+                      icon: const Icon(Icons.delete_sweep),
+                      onPressed: _ipBannedList.isEmpty || _isLoadingIpBans ? null : _showClearIpBansConfirmDialog,
+                      tooltip: '清空 IP 封禁列表',
+                    ),
+                    IconButton(
+                      icon: const Icon(Icons.refresh),
+                      onPressed: _isLoadingIpBans ? null : _fetchIpBanList,
+                      tooltip: '刷新 IP 封禁列表',
+                    ),
+                  ],
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
+            if (_isLoadingIpBans)
+              const Center(
+                child: Padding(
+                  padding: EdgeInsets.all(16.0),
+                  child: CircularProgressIndicator(),
+                ),
+              )
+            else if (_ipBansErrorMessage.isNotEmpty)
+              Padding(
+                padding: const EdgeInsets.all(16.0),
+                child: Text(
+                  _ipBansErrorMessage,
+                  style: TextStyle(color: Colors.red[700]),
+                ),
+              )
+            else if (_ipBannedList.isEmpty)
+              const Padding(
+                padding: EdgeInsets.all(16.0),
+                child: Text('当前没有 IP 被封禁'),
+              )
+            else
+              ListView.builder(
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                itemCount: _ipBannedList.length,
+                itemBuilder: (context, index) {
+                  final ban = _ipBannedList[index];
+                  final ip = ban['ip'] ?? '未知 IP';
+                  String reasonText = '未指定原因';
+                  if (ban.containsKey('reason')) {
+                    reasonText = ban['reason'].toString();
+                  }
+                  final source = ban['source'] ?? '未知来源';
+                  String expiryText = '永久封禁';
+                  if (ban.containsKey('expires') && ban['expires'] != null) {
+                    expiryText = '到期时间: ${ban['expires']}';
+                  }
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 8.0),
+                    child: Padding(
+                      padding: const EdgeInsets.all(12.0),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Text(
+                                  ip,
+                                  style: const TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 16,
+                                  ),
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.delete_outline),
+                                onPressed: () => _showUnbanIpConfirmDialog(ip),
+                                tooltip: '解除 IP 封禁',
+                              ),
+                            ],
+                          ),
+                          const Divider(),
                           _buildInfoRow('原因', reasonText),
                           _buildInfoRow('执行人', source),
                           _buildInfoRow('状态', expiryText),
