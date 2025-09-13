@@ -325,6 +325,9 @@ Future<Map<String, dynamic>> _callAPI(String method, [dynamic params]) async {
       if (screenWidth >= 900) {
         // 大屏幕
         return Scaffold(
+          appBar: AppBar(
+            title: Text(widget.name),
+          ),
           body: Row(
             children: [
               NavigationRail(
@@ -350,6 +353,9 @@ Future<Map<String, dynamic>> _callAPI(String method, [dynamic params]) async {
       } else {
         // 中等屏幕
         return Scaffold(
+          appBar: AppBar(
+            title: Text(widget.name),
+          ),
           body: Row(
             children: [
               NavigationRail(
@@ -380,6 +386,9 @@ Future<Map<String, dynamic>> _callAPI(String method, [dynamic params]) async {
     } else {
       // 底部导航栏
       return Scaffold(
+        appBar: AppBar(
+          title: Text(widget.name),
+        ),
         body: pages[_selectedIndex],
         bottomNavigationBar: NavigationBar(
           destinations: _navigationItems.map((item) {
