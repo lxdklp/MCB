@@ -129,7 +129,7 @@ class AboutPageState extends State<AboutPage> {
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: ListTile(
-              title: const Text('BUG反馈与建议'),
+              title: const Text('BUG反馈与APP建议'),
               subtitle: const Text('https://github.com/lxdklp/MCB/issues'),
               trailing: const Icon(Icons.open_in_new),
               onTap: () => _launchURL('https://github.com/lxdklp/MCB/issues'),
@@ -233,6 +233,12 @@ class AboutPageState extends State<AboutPage> {
                   subtitle: const Text('https://github.com/fluttercommunity/plus_plugins/tree/main/packages/package_info_plus/package_info_plus'),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: () => _launchURL('https://github.com/fluttercommunity/plus_plugins/tree/main/packages/package_info_plus/package_info_plus'),
+                ),
+                ListTile(
+                  title: const Text('flutter_launcher_icons'),
+                  subtitle: const Text('https://github.com/fluttercommunity/flutter_launcher_icons'),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: () => _launchURL('https://github.com/fluttercommunity/flutter_launcher_icons'),
                 ),
                 const ListTile(
                   title: Text('Github的各位'),
