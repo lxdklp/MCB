@@ -37,8 +37,6 @@ class ServerInfoPageState extends State<ServerInfoPage> {
   final Map<int, Completer<Map<String, dynamic>>> _pendingRequests = {};
   int _requestId = 1;
   Timer? _reconnectTimer;
-  
-  // 当前选中的导航项索引
   int _selectedIndex = 0;
 
   // 导航项数据
@@ -146,7 +144,6 @@ class ServerInfoPageState extends State<ServerInfoPage> {
         onDone: _handleWebSocketClosed,
       );
       _isConnected = true;
-      
       if (mounted) {
         setState(() {
           _isLoading = false;
@@ -207,7 +204,7 @@ class ServerInfoPageState extends State<ServerInfoPage> {
       }
     });
   }
-  
+
   // 处理连接错误
   Future<void> _handleConnectionError(Object error) async {
     if (mounted) {

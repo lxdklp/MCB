@@ -145,9 +145,9 @@ class AboutPageState extends State<AboutPage> {
                 ),
                 ListTile(
                   title: const Text('Minecraft Wiki'),
-                  subtitle: const Text('API文档'),
+                  subtitle: const Text('编写API文档与提供游戏规则中文描述\nhttps://minecraft.wiki'),
                   trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('minecraft.wiki'),
+                  onTap: () => _launchURL('https://minecraft.wiki'),
                 ),
                 ListTile(
                   title: const Text('Sawaratsuki'),
