@@ -1,6 +1,6 @@
 <p align="center"><img src="./assets/img/icon/icon.png"  width="20%" /><img src="./assets/img/logo/flutter.png"  width="25%" /></p>
 
-# Flutter Minecraft Launcher
+# Minecraft Box
 
 一个由Flutter编写的Material Design 3风格的使用GPL3.0协议开源跨平台 Minecraft Java 服务器管理工具,支持Android、iOS、macOS、Windows、Linux、Web
 
