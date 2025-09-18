@@ -1,12 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:mcb/function/log.dart';
+import 'package:mcb/function/network.dart';
 
 class ServerSettingPage extends StatefulWidget {
   final String name;
   final String address;
   final String port;
   final String token;
-  final Function(String, [dynamic]) callAPI;
+  final Network network;
+  final bool isConnected;
 
   const ServerSettingPage({
     super.key,
@@ -14,7 +16,8 @@ class ServerSettingPage extends StatefulWidget {
     required this.address,
     required this.port,
     required this.token,
-    required this.callAPI,
+    required this.network,
+    required this.isConnected,
   });
 
   @override
@@ -145,7 +148,7 @@ class ServerSettingPageState extends State<ServerSettingPage> {
       _gameRulesErrorMessage = '';
     });
     try {
-      final response = await widget.callAPI('gamerules');
+      final response = await widget.network.callAPI('gamerules');
       if (response.containsKey('result')) {
         final result = response['result'];
         if (result is List) {
@@ -180,7 +183,7 @@ class ServerSettingPageState extends State<ServerSettingPage> {
   // 更新游戏规则
   Future<void> _updateGameRule(String ruleKey, dynamic ruleValue) async {
     try {
-      final response = await widget.callAPI('gamerules/update', [{
+      final response = await widget.network.callAPI('gamerules/update', [{
         "key": ruleKey,
         "value": ruleValue.toString()
       }]);
@@ -208,7 +211,7 @@ class ServerSettingPageState extends State<ServerSettingPage> {
   // 加载布尔型设置
   Future<void> _loadBooleanSetting(String endpoint, Function(bool) setter) async {
     try {
-      final response = await widget.callAPI(endpoint);
+      final response = await widget.network.callAPI(endpoint);
       if (response.containsKey('result')) {
         setter(response['result'] as bool);
       }
@@ -221,7 +224,7 @@ class ServerSettingPageState extends State<ServerSettingPage> {
   // 加载字符串设置
   Future<void> _loadStringSetting(String endpoint, Function(String) setter) async {
     try {
-      final response = await widget.callAPI(endpoint);
+      final response = await widget.network.callAPI(endpoint);
       if (response.containsKey('result')) {
         setter(response['result'] as String);
       }
@@ -234,7 +237,7 @@ class ServerSettingPageState extends State<ServerSettingPage> {
   // 加载整型设置
   Future<void> _loadIntegerSetting(String endpoint, Function(int) setter) async {
     try {
-      final response = await widget.callAPI(endpoint);
+      final response = await widget.network.callAPI(endpoint);
       if (response.containsKey('result')) {
         setter(response['result'] as int);
       }
@@ -247,7 +250,7 @@ class ServerSettingPageState extends State<ServerSettingPage> {
   // 更新布尔型设置
   Future<void> _updateBooleanSetting(String endpoint, bool value) async {
     try {
-      await widget.callAPI('$endpoint/set', [value]);
+      await widget.network.callAPI('$endpoint/set', [value]);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('设置已更新')),
       );
@@ -262,7 +265,7 @@ class ServerSettingPageState extends State<ServerSettingPage> {
   // 更新字符串设置
   Future<void> _updateStringSetting(String endpoint, String value) async {
     try {
-      await widget.callAPI('$endpoint/set', [value]);
+      await widget.network.callAPI('$endpoint/set', [value]);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('设置已更新')),
       );
@@ -277,7 +280,7 @@ class ServerSettingPageState extends State<ServerSettingPage> {
   // 更新整型设置
   Future<void> _updateIntegerSetting(String endpoint, int value) async {
     try {
-      await widget.callAPI('$endpoint/set', [value]);
+      await widget.network.callAPI('$endpoint/set', [value]);
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(content: Text('设置已更新')),
       );

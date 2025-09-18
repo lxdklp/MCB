@@ -7,14 +7,24 @@ class EditServerPage extends StatefulWidget {
     super.key,
     required this.name,
     required this.address,
-    required this.port,
+    required this.rpcPort,
     required this.token,
+    required this.tls,
+    required this.unsafe,
+    required this.rcon,
+    required this.rconPort,
+    required this.password,
   });
 
   final String name;
   final String address;
-  final String port;
+  final String rpcPort;
   final String token;
+  final String tls;
+  final String unsafe;
+  final String rcon;
+  final String rconPort;
+  final String password;
 
   @override
   EditServerPageState createState() => EditServerPageState();
@@ -23,26 +33,40 @@ class EditServerPage extends StatefulWidget {
 class EditServerPageState extends State<EditServerPage> {
   final TextEditingController _nameController = TextEditingController();
   final TextEditingController _addressController = TextEditingController();
-  final TextEditingController _portController = TextEditingController();
+  final TextEditingController _rpcPortController = TextEditingController();
   final TextEditingController _tokenController = TextEditingController();
+  final TextEditingController _rconPortController = TextEditingController();
+  final TextEditingController _passwordController = TextEditingController();
+
+  String tls = 'false';
+  String unsafe = 'false';
+  String rcon = 'false';
 
   bool _obscureToken = true;
+  bool _obscurePassword = true;
 
   @override
   void initState() {
     super.initState();
     _nameController.text = widget.name;
     _addressController.text = widget.address;
-    _portController.text = widget.port;
+    _rpcPortController.text = widget.rpcPort;
     _tokenController.text = widget.token;
+    tls = widget.tls;
+    unsafe = widget.unsafe;
+    rcon = widget.rcon;
+    _rconPortController.text = widget.rconPort;
+    _passwordController.text = widget.password;
   }
 
   @override
   void dispose() {
     _nameController.dispose();
     _addressController.dispose();
-    _portController.dispose();
+    _rpcPortController.dispose();
     _tokenController.dispose();
+    _rconPortController.dispose();
+    _passwordController.dispose();
     super.dispose();
   }
 
@@ -53,12 +77,22 @@ class EditServerPageState extends State<EditServerPage> {
     });
   }
 
+  // 切换 RCON 密码可见性
+  Future<void> _togglePasswordVisibility() async {
+    setState(() {
+      _obscurePassword = !_obscurePassword;
+    });
+  }
+
   // 保存服务器信息
   Future<void> _saveServer() async {
     String name = _nameController.text;
     String address = _addressController.text;
-    String port = _portController.text;
+    String rpcPort = _rpcPortController.text;
     String token = _tokenController.text;
+    String rconPort = _rconPortController.text;
+    String password = _passwordController.text;
+
     if (name.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -73,10 +107,10 @@ class EditServerPageState extends State<EditServerPage> {
       );
       return;
     }
-    if (port.isEmpty) {
+    if (rpcPort.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('请填写端口')),
+        const SnackBar(content: Text('请填写 RPC 端口')),
       );
       return;
     }
@@ -87,10 +121,40 @@ class EditServerPageState extends State<EditServerPage> {
       );
       return;
     }
+    if (rcon == 'true') {
+      if (rconPort.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请填写 RCON 端口')),
+        );
+        return;
+      }
+      if (password.isEmpty) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('请填写 RCON 密码')),
+        );
+        return;
+      }
+      if (int.tryParse(rpcPort) == null || int.parse(rpcPort) <= 0 || int.parse(rpcPort) > 65535) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('端口格式不正确')),
+        );
+        return;
+      }
+    }
+    if (rcon == 'false') {
+      rconPort = '';
+      password = '';
+    }
     final prefs = await SharedPreferences.getInstance();
-    List<String> serverConfig = [name, address, port, token];
+    List<String> serverConfig = [name, address, rpcPort, token, tls, unsafe, rcon, rconPort, password];
     await prefs.setStringList('${name}_config', serverConfig);
-    LogUtil.log('保存服务器: $name, 地址: $address, 端口: $port, 令牌: $token', level: 'INFO');
+    LogUtil.log(
+      '保存服务器: $name, 地址: $address, 端口: $rpcPort, 令牌: $token, TLS: $tls, 允许不安全: $unsafe, RCON: $rcon, RCON 端口: $rconPort, RCON 密码: $password',
+      level: 'INFO'
+    );
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('服务器添加成功')),
@@ -147,47 +211,232 @@ class EditServerPageState extends State<EditServerPage> {
       body: ListView(
         padding: const EdgeInsets.all(16.0),
         children: [
-          TextField(
-            controller: _nameController,
-            decoration: const InputDecoration(
-              labelText: '名称',
-              hintText: '请输入名称',
-              border: OutlineInputBorder(),
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  TextField(
+                    controller: _nameController,
+                    decoration: const InputDecoration(
+                      labelText: '名称',
+                      hintText: '请输入名称',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _addressController,
+                    decoration: const InputDecoration(
+                      labelText: '地址',
+                      hintText: '请输入地址',
+                      border: OutlineInputBorder(),
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _rpcPortController,
+                    decoration: const InputDecoration(
+                      labelText: '端口',
+                      hintText: '请输入端口',
+                      border: OutlineInputBorder(),
+                    ),
+                    keyboardType: TextInputType.number,
+                  ),
+                  const SizedBox(height: 16),
+                  TextField(
+                    controller: _tokenController,
+                    decoration: InputDecoration(
+                      labelText: '令牌',
+                      hintText: '请输入令牌',
+                      border: const OutlineInputBorder(),
+                      suffixIcon: IconButton(
+                        icon: Icon(_obscureToken ? Icons.visibility : Icons.visibility_off),
+                        onPressed: _toggleTokenVisibility,
+                      )
+                    ),
+                    obscureText: _obscureToken,
+                  ),
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
-            controller: _addressController,
-            decoration: const InputDecoration(
-              labelText: '地址',
-              hintText: '请输入地址',
-              border: OutlineInputBorder(),
+          Card(
+            elevation: 1,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    '连接设置',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  Text(
+                    '实验性,可能存在bug',
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: Colors.grey[600],
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'TLS 加密',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                              '使用安全连接',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                        ],
+                      ),
+                      Switch(
+                        value: tls == 'true',
+                        onChanged: (value) {
+                          setState(() {
+                            tls = value ? 'true' : 'false';
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  if (tls == 'true') ...[
+                    const SizedBox(height: 20),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '允许不安全证书',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w500,
+                              ),
+                            ),
+                            Text(
+                              '自签证书请启用',
+                              style: TextStyle(
+                                fontSize: 14,
+                                color: Colors.grey[600],
+                              ),
+                            ),
+                          ],
+                        ),
+                        Switch(
+                          value: unsafe == 'true',
+                          onChanged: (value) {
+                            setState(() {
+                              unsafe = value ? 'true' : 'false';
+                            });
+                          },
+                        ),
+                      ],
+                    ),
+                  ],
+                ],
+              ),
             ),
           ),
           const SizedBox(height: 16),
-          TextField(
-            controller: _portController,
-            decoration: const InputDecoration(
-              labelText: '端口',
-              hintText: '请输入端口',
-              border: OutlineInputBorder(),
+          Card(
+            elevation: 1,
+            child: Padding(
+              padding: const EdgeInsets.all(16.0),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  const Text(
+                    'RCON',
+                    style: TextStyle(
+                      fontSize: 16,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            '启用 RCON',
+                            style: TextStyle(
+                              fontSize: 16,
+                              fontWeight: FontWeight.w500,
+                            ),
+                          ),
+                          Text(
+                            '通过 RCON 远程管理服务器',
+                            style: TextStyle(
+                              fontSize: 14,
+                              color: Colors.grey[600],
+                            ),
+                          ),
+                        ],
+                      ),
+                      Switch(
+                        value: rcon == 'true',
+                        onChanged: (value) {
+                          setState(() {
+                            rcon = value ? 'true' : 'false';
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  if (rcon == 'true') ...[
+                    const SizedBox(height: 12),
+                    TextField(
+                      controller: _rconPortController,
+                      decoration: const InputDecoration(
+                        labelText: '端口',
+                        hintText: '请输入 RCON 端口',
+                        border: OutlineInputBorder(),
+                      ),
+                      keyboardType: TextInputType.number,
+                    ),
+                    const SizedBox(height: 16),
+                    TextField(
+                      controller: _passwordController,
+                      decoration: InputDecoration(
+                        labelText: '密码',
+                        hintText: '请输入 RCON 密码',
+                        border: OutlineInputBorder(),
+                        suffixIcon: IconButton(
+                          icon: Icon(_obscurePassword ? Icons.visibility : Icons.visibility_off),
+                          onPressed: _togglePasswordVisibility,
+                        ),
+                      ),
+                      obscureText: _obscurePassword,
+                    ),
+                  ],
+                ],
+              ),
             ),
-            keyboardType: TextInputType.number,
           ),
-          const SizedBox(height: 16),
-          TextField(
-            controller: _tokenController,
-            decoration: InputDecoration(
-              labelText: '令牌',
-              hintText: '请输入令牌',
-              border: const OutlineInputBorder(),
-              suffixIcon: IconButton(
-                icon: Icon(_obscureToken ? Icons.visibility : Icons.visibility_off),
-                onPressed: _toggleTokenVisibility,
-              )
-            ),
-            obscureText: _obscureToken,
-          ),
+          const SizedBox(height: 150),
         ],
       ),
       floatingActionButton: Column(
@@ -205,7 +454,7 @@ class EditServerPageState extends State<EditServerPage> {
             child: const Icon(Icons.delete),
           ),
         ],
-      )
+      ),
     );
   }
 }

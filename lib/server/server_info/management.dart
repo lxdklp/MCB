@@ -1,20 +1,18 @@
 import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
-import 'package:web_socket_channel/web_socket_channel.dart';
 import 'dart:convert';
 import 'package:crypto/crypto.dart';
 import 'package:mcb/function/log.dart';
+import 'package:mcb/function/network.dart';
 
 class ServerManagementPage extends StatefulWidget {
   final String name;
   final String address;
   final String port;
   final String token;
-  final WebSocketChannel? channel;
+  final Network network;
   final bool isConnected;
-  final Function(String, [dynamic]) callAPI;
-
 
   const ServerManagementPage({
     super.key,
@@ -22,9 +20,8 @@ class ServerManagementPage extends StatefulWidget {
     required this.address,
     required this.port,
     required this.token,
-    required this.channel,
+    required this.network,
     required this.isConnected,
-    required this.callAPI,
   });
 
   @override
@@ -86,7 +83,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       _isLoading = true;
     });
     try {
-      final jsonResponse = await widget.callAPI('server/status');
+      final jsonResponse = await widget.network.callAPI('server/status');
       if (jsonResponse.containsKey('result')) {
         final result = jsonResponse['result'];
         if (mounted) {
@@ -121,7 +118,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       _playersErrorMessage = '';
     });
     try {
-      final jsonResponse = await widget.callAPI('players');
+      final jsonResponse = await widget.network.callAPI('players');
       if (jsonResponse.containsKey('result')) {
         final result = jsonResponse['result'];
         if (result is List) {
@@ -164,7 +161,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       _bansErrorMessage = '';
     });
     try {
-      final jsonResponse = await widget.callAPI('bans');
+      final jsonResponse = await widget.network.callAPI('bans');
       if (jsonResponse.containsKey('result')) {
         final result = jsonResponse['result'];
         if (result is List) {
@@ -204,7 +201,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       _ipBansErrorMessage = '';
     });
     try {
-      final jsonResponse = await widget.callAPI('ip_bans');
+      final jsonResponse = await widget.network.callAPI('ip_bans');
       if (jsonResponse.containsKey('result')) {
         final result = jsonResponse['result'];
         if (result is List) {
@@ -244,7 +241,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       _operatorsErrorMessage = '';
     });
     try {
-      final jsonResponse = await widget.callAPI('operators');
+      final jsonResponse = await widget.network.callAPI('operators');
       if (jsonResponse.containsKey('result')) {
         final result = jsonResponse['result'];
         if (result is List) {
@@ -284,7 +281,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
       _allowlistErrorMessage = '';
     });
     try {
-      final jsonResponse = await widget.callAPI('allowlist');
+      final jsonResponse = await widget.network.callAPI('allowlist');
       if (jsonResponse.containsKey('result')) {
         final result = jsonResponse['result'];
         if (result is List) {
@@ -325,7 +322,11 @@ class ServerManagementPageState extends State<ServerManagementPage> {
     } else if (error is FormatException) {
       return '数据格式错误，服务器返回了无效数据';
     } else if (error.toString().contains('WebSocket')) {
-      return 'WebSocket连接失败,请确认服务器支持WebSocket';
+      return 'WebSocket连接失败，请确认服务器支持WebSocket';
+    } else if (error.toString().contains('certificate') ||
+              error.toString().contains('SSL') ||
+              error.toString().contains('TLS')) {
+      return '证书验证失败，您可以尝试启用"允许不安全证书"选项';
     } else {
       return '发生未知错误: ${error.toString()}';
     }
@@ -458,7 +459,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                             } else {
                               messageData['literal'] = message;
                             }
-                            await widget.callAPI('server/system_message', [
+                            await widget.network.callAPI('server/system_message', [
                               {
                                 'message': messageData,
                                 'overlay': isOverlay,
@@ -531,7 +532,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
               Navigator.pop(context);
               final reason = reasonController.text.trim();
               try {
-                await widget.callAPI('players/kick', [
+                await widget.network.callAPI('players/kick', [
                   {
                     "message": {"literal": reason.isEmpty ? "来自MCB的踢出" : reason},
                     "players": [{
@@ -613,7 +614,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                 Navigator.pop(context);
                 final reason = reasonController.text.trim();
                 try {
-                  await widget.callAPI('bans/add', [[
+                  await widget.network.callAPI('bans/add', [[
                     {
                       "reason": reason.isEmpty ? "来自MCB的封禁" : reason,
                       "source": sourceController.text.trim().isEmpty ? "MCB客户端" : sourceController.text.trim(),
@@ -669,7 +670,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await widget.callAPI('ip_bans/remove', [ip]);
+                await widget.network.callAPI('ip_bans/remove', [ip]);
                 if (mounted) {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     SnackBar(content: Text('已解除对 IP $ip 的封禁')),
@@ -709,7 +710,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await widget.callAPI('ip_bans/clear');
+                await widget.network.callAPI('ip_bans/clear');
                 if (mounted) {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     const SnackBar(content: Text('已清空所有 IP 封禁记录')),
@@ -753,7 +754,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await widget.callAPI('bans/remove', [[
+                await widget.network.callAPI('bans/remove', [[
                   {
                     "player": [{
                       "name": playerName,
@@ -800,7 +801,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await widget.callAPI('bans/clear');
+                await widget.network.callAPI('bans/clear');
                 if (mounted) {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     const SnackBar(content: Text('已清空所有封禁记录')),
@@ -844,7 +845,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await widget.callAPI('operators/remove', [
+                await widget.network.callAPI('operators/remove', [
                   {
                     "player": {
                       "name": playerName,
@@ -944,7 +945,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
               onPressed: () async {
                 Navigator.pop(context);
                 try {
-                  await widget.callAPI('operators/add', [[
+                  await widget.network.callAPI('operators/add', [[
                     {
                       "player": {
                         "name": playerName,
@@ -994,7 +995,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await widget.callAPI('operators/clear');
+                await widget.network.callAPI('operators/clear');
                 if (mounted) {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     const SnackBar(content: Text('已清空所有管理员')),
@@ -1038,7 +1039,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await widget.callAPI('allowlist/add', [[
+                await widget.network.callAPI('allowlist/add', [[
                   {
                     "name": playerName,
                     "id": playerUUID
@@ -1161,7 +1162,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
               final playerName = nameController.text.trim();
               final playerUUID = uuidController.text.trim();
               try {
-                await widget.callAPI('allowlist/add', [[
+                await widget.network.callAPI('allowlist/add', [[
                   {
                     "name": playerName,
                     "id": playerUUID
@@ -1208,7 +1209,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
               Navigator.pop(context);
               try {
                 // 从白名单移除API调用
-                await widget.callAPI('allowlist/remove', [[
+                await widget.network.callAPI('allowlist/remove', [[
                   {
                     "name": playerName,
                     "id": playerUUID
@@ -1256,7 +1257,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
             onPressed: () async {
               Navigator.pop(context);
               try {
-                await widget.callAPI('allowlist/clear');
+                await widget.network.callAPI('allowlist/clear');
                 if (mounted) {
                   ScaffoldMessenger.of(currentContext).showSnackBar(
                     const SnackBar(content: Text('已清空白名单')),
@@ -1284,7 +1285,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
   // 保存服务器
   Future<void> _saveServer() async {
     try {
-      await widget.callAPI('server/save');
+      await widget.network.callAPI('server/save');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('服务器保存命令已发送')),
@@ -1303,7 +1304,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
   // 停止服务器
   Future<void> _stopServer() async {
     try {
-      await widget.callAPI('server/stop');
+      await widget.network.callAPI('server/stop');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('服务器停止命令已发送')),
@@ -1508,7 +1509,7 @@ class ServerManagementPageState extends State<ServerManagementPage> {
                         } else {
                           messageData['literal'] = message;
                         }
-                        await widget.callAPI('server/system_message', [
+                        await widget.network.callAPI('server/system_message', [
                           {
                             'message': messageData,
                             'overlay': isOverlay

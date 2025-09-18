@@ -31,12 +31,17 @@ class ServerPageState extends State<ServerPage> {
     List<Map<String, String>> servers = [];
     for (String name in serverNames) {
       final List<String>? config = prefs.getStringList('${name}_config');
-      if (config != null && config.length == 4) {
+      if (config != null) {
         servers.add({
           'name': config[0],
           'address': config[1],
-          'port': config[2],
+          'rpcPort': config[2],
           'token': config[3],
+          'tls': config[4],
+          'unsafe': config[5],
+          'rcon': config[6],
+          'rconPort': config[7],
+          'password': config[8],
         });
       }
     }
@@ -108,15 +113,20 @@ class ServerPageState extends State<ServerPage> {
           margin: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
           child: ListTile(
             title: Text('服务器名称: ${server['name'] ?? '未命名服务器'}'),
-            subtitle: Text('RPC地址: ${server['address']}:${server['port']}'),
+            subtitle: Text('RPC地址: ${server['address']}:${server['rpcPort']}'),
             onTap: () {
               Navigator.push(
                 context,
                 MaterialPageRoute(builder: (context) => ServerInfoPage(
                   name: server['name'] ?? '',
                   address: server['address'] ?? '',
-                  port: server['port'] ?? '',
+                  port: server['rpcPort'] ?? '',
                   token: server['token'] ?? '',
+                  tls: server['tls'] ?? 'false',
+                  unsafe: server['unsafe'] ?? 'false',
+                  rcon: server['rcon'] ?? 'false',
+                  rconPort: server['rconPort'] ?? '',
+                  password: server['password'] ?? '',
                 )),
               ).then((_) {
                 _loadServers();
@@ -132,8 +142,13 @@ class ServerPageState extends State<ServerPage> {
                     MaterialPageRoute(builder: (context) => EditServerPage(
                       name: server['name'] ?? '',
                       address: server['address'] ?? '',
-                      port: server['port'] ?? '',
+                      rpcPort: server['rpcPort'] ?? '',
                       token: server['token'] ?? '',
+                      tls: server['tls'] ?? 'false',
+                      unsafe: server['unsafe'] ?? 'false',
+                      rcon: server['rcon'] ?? 'false',
+                      rconPort: server['rconPort'] ?? '',
+                      password: server['password'] ?? '',
                     )),
                   ).then((_) {
                     _loadServers();

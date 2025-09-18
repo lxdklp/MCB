@@ -18,5 +18,6 @@
         }
     ],
     "idf.pythonInstallPath": "/usr/bin/python3",
-    "cmake.ignoreCMakeListsMissing": true
+    "cmake.ignoreCMakeListsMissing": true,
+    "java.configuration.updateBuildConfiguration": "automatic"
 }
