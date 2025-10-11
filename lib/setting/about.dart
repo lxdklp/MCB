@@ -239,6 +239,11 @@ class AboutPageState extends State<AboutPage> {
                   subtitle: const Text('https://github.com/fluttercommunity/flutter_launcher_icons'),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: () => _launchURL('https://github.com/fluttercommunity/flutter_launcher_icons'),
+                ),ListTile(
+                  title: const Text('dio'),
+                  subtitle: const Text('https://github.com/cfug/dio'),
+                  trailing: const Icon(Icons.open_in_new),
+                  onTap: () => _launchURL('https://github.com/cfug/dio'),
                 ),
                 const ListTile(
                   title: Text('Github的各位'),
