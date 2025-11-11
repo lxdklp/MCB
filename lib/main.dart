@@ -1,12 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:dynamic_color/dynamic_color.dart';
 import 'package:shared_preferences/shared_preferences.dart';
-import 'package:mcb/server.dart';
-import 'package:mcb/setting.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:dio/dio.dart';
 import 'package:mcb/function/log.dart';
+import 'package:mcb/server.dart';
+import 'package:mcb/setting.dart';
 
 // 日志
 _initLogs() async {
@@ -14,7 +15,7 @@ _initLogs() async {
   String appVersion = packageInfo.version;
   int buildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
   await LogUtil.clearLogs();
-  await LogUtil.log('启动MCB,版本: $appVersion,构建号: $buildNumber', level: 'INFO');
+  await LogUtil.log('启动MCB,平台:${Platform.operatingSystem}, 版本: $appVersion,构建号: $buildNumber', level: 'INFO');
 }
 
 void main() async {
@@ -245,9 +246,9 @@ class _MyHomePageState extends State<MyHomePage> {
       final PackageInfo packageInfo = await PackageInfo.fromPlatform();
       String appVersion = packageInfo.version;
       int buildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;
-      LogUtil.log('检查更新...,ua MCB/$appVersion', level: 'INFO');
+      LogUtil.log('检查更新...,ua MCB/$appVersion/${Platform.operatingSystem}', level: 'INFO');
       final dio = Dio();
-      dio.options.headers['User-Agent'] = 'MCB/$appVersion';
+      dio.options.headers['User-Agent'] = 'MCB/$appVersion/${Platform.operatingSystem}';
       final response = await dio.get('https://api.lxdklp.top/v1/mcb/get_version');
       LogUtil.log('status: ${response.statusCode}', level: 'INFO');
       LogUtil.log('data: ${response.data}', level: 'INFO');
