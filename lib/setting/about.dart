@@ -77,7 +77,7 @@ class AboutPageState extends State<AboutPage> {
                             height: 150,
                           ),
                         ),
-                        const SizedBox(width: 70), // 两张图片之间的间距
+                        const SizedBox(width: 70),
                         Flexible(
                           child: Image.asset(
                             'assets/img/logo/flutter.png',
@@ -86,7 +86,7 @@ class AboutPageState extends State<AboutPage> {
                         ),
                       ],
                     ),
-                    const SizedBox(height: 16), // 图片和文字之间的间距
+                    const SizedBox(height: 16),
                     Text(
                       'Minecraft Box Version $_appVersion',
                       style: TextStyle(
@@ -137,6 +137,15 @@ class AboutPageState extends State<AboutPage> {
           ),
           Card(
             margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+            child: ListTile(
+              title: Text('许可'),
+              subtitle: Text('感谢各位依赖库的贡献者'),
+              trailing: const Icon(Icons.open_in_new),
+              onTap: () => showLicensePage(context: context)
+            ),
+          ),
+          Card(
+            margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
             child: Column(
               children: [
                 const ListTile(
@@ -166,84 +175,6 @@ class AboutPageState extends State<AboutPage> {
                   subtitle: const Text('开源协议\nhttps://www.gnu.org/licenses/gpl-3.0.html'),
                   trailing: const Icon(Icons.open_in_new),
                   onTap: () => _launchURL('https://www.gnu.org/licenses/gpl-3.0.html'),
-                ),
-                const ListTile(
-                  title: Text('本项目使用的开源库'),
-                ),
-                ListTile(
-                  title: const Text('flutter'),
-                  subtitle: const Text('https://github.com/flutter/flutter'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/flutter/flutter'),
-                ),
-                ListTile(
-                  title: const Text('cupertino_icons'),
-                  subtitle: const Text('https://github.com/flutter/packages/tree/main/third_party/packages/cupertino_icons'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/flutter/packages/tree/main/third_party/packages/cupertino_icons'),
-                ),
-                ListTile(
-                  title: const Text('dynamic_color'),
-                  subtitle: const Text('https://github.com/material-foundation/flutter-packages/tree/main/packages/dynamic_color'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/material-foundation/flutter-packages/tree/main/packages/dynamic_color'),
-                ),
-                ListTile(
-                  title: const Text('shared_preferences'),
-                  subtitle: const Text('https://github.com/flutter/packages/tree/main/packages/shared_preferences/shared_preferences'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/flutter/packages/tree/main/packages/shared_preferences/shared_preferences'),
-                ),
-                ListTile(
-                  title: const Text('crypto'),
-                  subtitle: const Text('https://github.com/dart-lang/core/tree/main/pkgs/crypto'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/dart-lang/core/tree/main/pkgs/crypto'),
-                ),
-                ListTile(
-                  title: const Text('json_rpc_2'),
-                  subtitle: const Text('https://github.com/dart-lang/tools/tree/main/pkgs/json_rpc_2'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/dart-lang/tools/tree/main/pkgs/json_rpc_2'),
-                ),
-                ListTile(
-                  title: const Text('web_socket_channel'),
-                  subtitle: const Text('https://github.com/dart-lang/http/tree/master/pkgs/web_socket_channel'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/dart-lang/http/tree/master/pkgs/web_socket_channel'),
-                ),
-                ListTile(
-                  title: const Text('flutter_launcher_icons'),
-                  subtitle: const Text('https://github.com/fluttercommunity/flutter_launcher_icons'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/fluttercommunity/flutter_launcher_icons'),
-                ),
-                ListTile(
-                  title: const Text('url_launcher'),
-                  subtitle: const Text('https://github.com/flutter/packages/tree/main/packages/url_launcher/url_launcher'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/flutter/packages/tree/main/packages/url_launcher/url_launcher'),
-                ),ListTile(
-                  title: const Text('flutter_colorpicker'),
-                  subtitle: const Text('https://github.com/mchome/flutter_colorpicker'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/mchome/flutter_colorpicker'),
-                ),ListTile(
-                  title: const Text('package_info_plus'),
-                  subtitle: const Text('https://github.com/fluttercommunity/plus_plugins/tree/main/packages/package_info_plus/package_info_plus'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/fluttercommunity/plus_plugins/tree/main/packages/package_info_plus/package_info_plus'),
-                ),
-                ListTile(
-                  title: const Text('flutter_launcher_icons'),
-                  subtitle: const Text('https://github.com/fluttercommunity/flutter_launcher_icons'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/fluttercommunity/flutter_launcher_icons'),
-                ),ListTile(
-                  title: const Text('dio'),
-                  subtitle: const Text('https://github.com/cfug/dio'),
-                  trailing: const Icon(Icons.open_in_new),
-                  onTap: () => _launchURL('https://github.com/cfug/dio'),
                 ),
                 const ListTile(
                   title: Text('Github的各位'),
