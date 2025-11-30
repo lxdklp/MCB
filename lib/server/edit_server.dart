@@ -149,6 +149,13 @@ class EditServerPageState extends State<EditServerPage> {
       password = '';
     }
     final prefs = await SharedPreferences.getInstance();
+    if (name != widget.name) {
+      List<String> servers = prefs.getStringList('servers') ?? [];
+      servers.remove(widget.name);
+      servers.add(name);
+      await prefs.setStringList('servers', servers);
+      await prefs.remove('${widget.name}_config');
+    }
     String encryptedToken = await CryptoUtil.encrypt(token);
     String encryptedPassword = await CryptoUtil.encrypt(password);
     List<String> serverConfig = [name, address, rpcPort, encryptedToken, tls, unsafe, rcon, rconPort, encryptedPassword];
