@@ -125,7 +125,7 @@ class Network {
       };
       if (useTls && unsafe) {
         final httpClient = HttpClient()
-          ..badCertificateCallback = (_, __, ___) {
+          ..badCertificateCallback = (_, _, _) {
             LogUtil.log('接受不安全证书连接', level: 'WARNING');
             return true;
           };

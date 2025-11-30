@@ -3,6 +3,7 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mcb/server/add_server.dart';
 import 'package:mcb/server/edit_server.dart';
 import 'package:mcb/server/server_info.dart';
+import 'package:mcb/function/crypto_util.dart';
 
 class ServerPage extends StatefulWidget {
   const ServerPage({super.key});
@@ -36,12 +37,12 @@ class ServerPageState extends State<ServerPage> {
           'name': config[0],
           'address': config[1],
           'rpcPort': config[2],
-          'token': config[3],
+          'token': await CryptoUtil.decrypt(config[3]),
           'tls': config[4],
           'unsafe': config[5],
           'rcon': config[6],
           'rconPort': config[7],
-          'password': config[8],
+          'password': await CryptoUtil.decrypt(config[8]),
         });
       }
     }

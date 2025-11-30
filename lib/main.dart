@@ -10,7 +10,7 @@ import 'package:mcb/server.dart';
 import 'package:mcb/setting.dart';
 
 // 日志
-_initLogs() async {
+Future<void> _initLogs() async {
   final PackageInfo packageInfo = await PackageInfo.fromPlatform();
   String appVersion = packageInfo.version;
   int buildNumber = int.tryParse(packageInfo.buildNumber) ?? 0;

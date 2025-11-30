@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:mcb/function/log.dart';
+import 'package:mcb/function/crypto_util.dart';
 
 class EditServerPage extends StatefulWidget {
   const EditServerPage({
@@ -92,7 +93,6 @@ class EditServerPageState extends State<EditServerPage> {
     String token = _tokenController.text;
     String rconPort = _rconPortController.text;
     String password = _passwordController.text;
-
     if (name.isEmpty) {
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
@@ -149,10 +149,12 @@ class EditServerPageState extends State<EditServerPage> {
       password = '';
     }
     final prefs = await SharedPreferences.getInstance();
-    List<String> serverConfig = [name, address, rpcPort, token, tls, unsafe, rcon, rconPort, password];
+    String encryptedToken = await CryptoUtil.encrypt(token);
+    String encryptedPassword = await CryptoUtil.encrypt(password);
+    List<String> serverConfig = [name, address, rpcPort, encryptedToken, tls, unsafe, rcon, rconPort, encryptedPassword];
     await prefs.setStringList('${name}_config', serverConfig);
     LogUtil.log(
-      '保存服务器: $name, 地址: $address, 端口: $rpcPort, 令牌: $token, TLS: $tls, 允许不安全: $unsafe, RCON: $rcon, RCON 端口: $rconPort, RCON 密码: $password',
+      '已保存服务器: $name',
       level: 'INFO'
     );
     if (!mounted) return;

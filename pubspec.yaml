@@ -22,6 +22,8 @@ dependencies:
   url_launcher: ^6.3.2
   flutter_launcher_icons: ^0.14.4
   dio: ^5.9.0
+  device_info_plus: ^12.3.0
+  encrypt: ^5.0.3
 
 dev_dependencies:
   flutter_test:
