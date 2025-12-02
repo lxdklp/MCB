@@ -230,7 +230,7 @@ jobs:
             - name: 上传 Linux (x64) 构建产物
               uses: actions/upload-artifact@v4
               with:
-                name: linux-release
+                name: linux-x64-release
                 path: |
                   MCB-Linux-*-x64.zip
                   MCB-Linux-*-x64.deb
@@ -458,9 +458,9 @@ jobs:
                   artifacts/ios-release/*.ipa
                   artifacts/windows-release/*.zip
                   artifacts/windows-release/*.exe
-                  artifacts/linux-release/*.zip
-                  artifacts/linux-release/*.deb
-                  artifacts/linux-release/*.AppImage
+                  artifacts/linux-x64-release/*.zip
+                  artifacts/linux-x64-release/*.deb
+                  artifacts/linux-x64-release/*.AppImage
                   artifacts/linux-arm64-release/*.zip
                   artifacts/linux-arm64-release/*.deb
                   artifacts/linux-arm64-release/*.AppImage
