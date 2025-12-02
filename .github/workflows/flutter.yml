@@ -96,23 +96,6 @@ jobs:
             - name: Install dependencies
               run: flutter pub get
 
-            - name: Build iOS (no codesign)
-              run: flutter build ios --release --no-codesign
-
-            - name: Prepare iOS artifact (rename with version)
-              run: |
-                set -e
-                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-                cd build/ios/iphoneos
-                zip -r ../../../MCB-iOS-${VERSION}-iphoneos.zip Runner.app
-
-            - name: Upload iOS artifact
-              uses: actions/upload-artifact@v4
-              with:
-                name: ios-release
-                path: MCB-iOS-*.zip
-                retention-days: 7
-
     build-windows:
         name: Build Windows
         runs-on: windows-latest
@@ -133,18 +116,55 @@ jobs:
             - name: Build Windows
               run: flutter build windows --release
 
-            - name: Package Windows artifact (rename with version)
+            - name: Package Windows artifacts
+              shell: pwsh
               run: |
-                set -e
-                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-                cd build/windows/x64/runner/Release/
-                zip -r ../../../MCB-Windows-${VERSION}-x64.zip .
+                $VERSION = (Select-String -Path pubspec.yaml -Pattern '^version:' | ForEach-Object { $_.Line -replace 'version:\s*', '' -replace '\+.*', '' }).Trim()
+                Write-Host "VERSION=$VERSION"
+                # Create zip
+                Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "MCB-Windows-$VERSION-x64.zip"
 
-            - name: Upload Windows artifact
+            - name: Create Windows Installer (Inno Setup)
+              shell: pwsh
+              run: |
+                $VERSION = (Select-String -Path pubspec.yaml -Pattern '^version:' | ForEach-Object { $_.Line -replace 'version:\s*', '' -replace '\+.*', '' }).Trim()
+                # Download and install Inno Setup
+                Invoke-WebRequest -Uri "https://jrsoftware.org/download.php/is.exe" -OutFile "innosetup.exe"
+                Start-Process -Wait -FilePath "innosetup.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/SP-"
+                # Create Inno Setup script
+                $issContent = @"
+                [Setup]
+                AppName=MCB
+                AppVersion=$VERSION
+                DefaultDirName={autopf}\MCB
+                DefaultGroupName=MCB
+                OutputDir=.
+                OutputBaseFilename=MCB-Windows-$VERSION-x64-setup
+                Compression=lzma2
+                SolidCompression=yes
+                ArchitecturesAllowed=x64compatible
+                ArchitecturesInstallIn64BitMode=x64compatible
+
+                [Files]
+                Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
+
+                [Icons]
+                Name: "{group}\MCB"; Filename: "{app}\mcb.exe"
+                Name: "{commondesktop}\MCB"; Filename: "{app}\mcb.exe"
+
+                [Run]
+                Filename: "{app}\mcb.exe"; Description: "Launch MCB"; Flags: nowait postinstall skipifsilent
+                "@
+                $issContent | Out-File -FilePath "setup.iss" -Encoding UTF8
+                & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" "setup.iss"
+
+            - name: Upload Windows artifacts
               uses: actions/upload-artifact@v4
               with:
                 name: windows-release
-                path: MCB-Windows-*.zip
+                path: |
+                  MCB-Windows-*-x64.zip
+                  MCB-Windows-*-x64-setup.exe
                 retention-days: 7
 
     build-linux:
@@ -172,17 +192,170 @@ jobs:
             - name: Build Linux
               run: flutter build linux --release
 
-            - name: Package Linux artifact (rename with version)
+            - name: Install packaging tools
+              run: sudo apt-get install -y libfuse2
+
+            - name: Package Linux x64 artifacts
               run: |
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-                tar -czvf MCB-Linux-${VERSION}-x64.tar.gz -C build/linux/x64/release/bundle .
+                BUNDLE_DIR=build/linux/x64/release/bundle
+                # Create zip
+                cd $BUNDLE_DIR && zip -r ../../../../MCB-Linux-${VERSION}-x64.zip . && cd -
+                # Create .deb package
+                mkdir -p deb_pkg/DEBIAN
+                mkdir -p deb_pkg/usr/bin
+                mkdir -p deb_pkg/usr/share/applications
+                mkdir -p deb_pkg/usr/share/mcb
+                cp -r $BUNDLE_DIR/* deb_pkg/usr/share/mcb/
+                cat > deb_pkg/DEBIAN/control <<EOF
+                Package: mcb
+                Version: ${VERSION}
+                Section: utils
+                Priority: optional
+                Architecture: amd64
+                Maintainer: lxdklp
+                Description: MCB Application
+                EOF
+                cat > deb_pkg/usr/bin/mcb <<EOF
+                #!/bin/bash
+                exec /usr/share/mcb/mcb "\$@"
+                EOF
+                chmod +x deb_pkg/usr/bin/mcb
+                cat > deb_pkg/usr/share/applications/mcb.desktop <<EOF
+                [Desktop Entry]
+                Name=MCB
+                Exec=/usr/share/mcb/mcb
+                Type=Application
+                Categories=Utility;
+                EOF
+                dpkg-deb --build deb_pkg MCB-Linux-${VERSION}-x64.deb
+                # Create AppImage
+                mkdir -p AppDir/usr/bin
+                mkdir -p AppDir/usr/share/applications
+                mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+                cp -r $BUNDLE_DIR/* AppDir/usr/bin/
+                cat > AppDir/mcb.desktop <<EOF
+                [Desktop Entry]
+                Name=MCB
+                Exec=mcb
+                Icon=mcb
+                Type=Application
+                Categories=Utility;
+                EOF
+                cp AppDir/mcb.desktop AppDir/usr/share/applications/
+                touch AppDir/usr/share/icons/hicolor/256x256/apps/mcb.png
+                cat > AppDir/AppRun <<EOF
+                #!/bin/bash
+                exec \$APPDIR/usr/bin/mcb "\$@"
+                EOF
+                chmod +x AppDir/AppRun
+                curl -L -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
+                chmod +x appimagetool
+                ARCH=x86_64 ./appimagetool AppDir MCB-Linux-${VERSION}-x64.AppImage || true
 
-            - name: Upload Linux artifact
+            - name: Upload Linux x64 artifacts
               uses: actions/upload-artifact@v4
               with:
                 name: linux-release
-                path: MCB-Linux-*.tar.gz
+                path: |
+                  MCB-Linux-*-x64.zip
+                  MCB-Linux-*-x64.deb
+                  MCB-Linux-*-x64.AppImage
+                retention-days: 7
+
+    build-linux-arm64:
+        name: Build Linux (arm64)
+        runs-on: ubuntu-24.04-arm
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Install Linux dependencies
+              run: |
+                sudo apt-get update
+                sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libfuse2
+
+            - name: Setup Flutter
+              uses: subosito/flutter-action@v2
+              with:
+                flutter-version: ${{ env.FLUTTER_VERSION }}
+                channel: 'stable'
+                cache: true
+
+            - name: Install dependencies
+              run: flutter pub get
+
+            - name: Build Linux (arm64)
+              run: flutter build linux --release
+
+            - name: Package Linux arm64 artifacts
+              run: |
+                set -e
+                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                BUNDLE_DIR=build/linux/arm64/release/bundle
+                # Create zip
+                cd $BUNDLE_DIR && zip -r ../../../../MCB-Linux-${VERSION}-arm64.zip . && cd -
+                # Create .deb package
+                mkdir -p deb_pkg/DEBIAN
+                mkdir -p deb_pkg/usr/bin
+                mkdir -p deb_pkg/usr/share/applications
+                mkdir -p deb_pkg/usr/share/mcb
+                cp -r $BUNDLE_DIR/* deb_pkg/usr/share/mcb/
+                cat > deb_pkg/DEBIAN/control <<EOF
+                Package: mcb
+                Version: ${VERSION}
+                Section: utils
+                Priority: optional
+                Architecture: arm64
+                Maintainer: lxdklp
+                Description: MCB Application
+                EOF
+                cat > deb_pkg/usr/bin/mcb <<EOF
+                #!/bin/bash
+                exec /usr/share/mcb/mcb "\$@"
+                EOF
+                chmod +x deb_pkg/usr/bin/mcb
+                cat > deb_pkg/usr/share/applications/mcb.desktop <<EOF
+                [Desktop Entry]
+                Name=MCB
+                Exec=/usr/share/mcb/mcb
+                Type=Application
+                Categories=Utility;
+                EOF
+                dpkg-deb --build deb_pkg MCB-Linux-${VERSION}-arm64.deb
+                # Create AppImage
+                mkdir -p AppDir/usr/bin
+                mkdir -p AppDir/usr/share/applications
+                mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
+                cp -r $BUNDLE_DIR/* AppDir/usr/bin/
+                cat > AppDir/mcb.desktop <<EOF
+                [Desktop Entry]
+                Name=MCB
+                Exec=mcb
+                Icon=mcb
+                Type=Application
+                Categories=Utility;
+                EOF
+                cp AppDir/mcb.desktop AppDir/usr/share/applications/
+                touch AppDir/usr/share/icons/hicolor/256x256/apps/mcb.png
+                cat > AppDir/AppRun <<EOF
+                #!/bin/bash
+                exec \$APPDIR/usr/bin/mcb "\$@"
+                EOF
+                chmod +x AppDir/AppRun
+                curl -L -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
+                chmod +x appimagetool
+                ARCH=aarch64 ./appimagetool AppDir MCB-Linux-${VERSION}-arm64.AppImage || true
+
+            - name: Upload Linux arm64 artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                name: linux-arm64-release
+                path: |
+                  MCB-Linux-*-arm64.zip
+                  MCB-Linux-*-arm64.deb
+                  MCB-Linux-*-arm64.AppImage
                 retention-days: 7
 
     build-macos:
@@ -212,7 +385,7 @@ jobs:
                 APP_DIR=$(ls build/macos/Build/Products/Release/*.app | head -n1)
                 APP_NAME=$(basename "$APP_DIR" .app)
                 ARCH=$(uname -m)
-                OUT_NAME="MCB-macOS-${VERSION}-${ARCH}.dmg"
+                OUT_NAME="MCB-macOS-${VERSION}.dmg"
                 echo "Creating DMG from $APP_DIR -> ${OUT_NAME}"
                 hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$OUT_NAME"
                 # Remove dSYM to avoid keeping symbols in artifacts
@@ -262,14 +435,51 @@ jobs:
                 path: MCB-Web-*.zip
                 retention-days: 7
 
-    release:
-        name: Create Release
-        needs: [build-android, build-windows, build-linux, build-macos, build-web]
-        runs-on: ubuntu-latest
-        if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_release != 'true'
-        permissions:
-            contents: write
+    build-ios:
+        name: Build iOS
+        runs-on: macos-latest
         steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Setup Flutter
+              uses: subosito/flutter-action@v2
+              with:
+                flutter-version: ${{ env.FLUTTER_VERSION }}
+                channel: 'stable'
+                cache: true
+
+            - name: Install dependencies
+              run: flutter pub get
+
+            - name: Build iOS (no codesign)
+              run: flutter build ios --release --no-codesign
+
+            - name: Prepare iOS artifact (rename to .ipa)
+              run: |
+                set -e
+                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                # Create Payload directory structure for .ipa
+                mkdir -p Payload
+                cp -r build/ios/iphoneos/Runner.app Payload/
+                zip -r "MCB-iOS-${VERSION}.ipa" Payload
+                rm -rf Payload
+
+            - name: Upload iOS artifact
+              uses: actions/upload-artifact@v4
+              with:
+                name: ios-release
+                path: MCB-iOS-*.ipa
+                retention-days: 7
+
+    release:
+      name: Create Release
+      needs: [build-android, build-windows, build-linux, build-linux-arm64, build-macos, build-web, build-ios]
+      runs-on: ubuntu-latest
+      if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_release != 'true'
+      permissions:
+        contents: write
+      steps:
             - name: Download all artifacts
               uses: actions/download-artifact@v4
               with:
@@ -287,11 +497,17 @@ jobs:
               with:
                 files: |
                   artifacts/android-release/*.apk
-                  artifacts/MCB-iOS-*.zip
-                  artifacts/MCB-Windows-*.zip
-                  artifacts/MCB-Linux-*.tar.gz
-                  artifacts/MCB-macOS-*.dmg
-                  artifacts/MCB-Web-*.zip
+                  artifacts/ios-release/*.ipa
+                  artifacts/windows-release/*.zip
+                  artifacts/windows-release/*.exe
+                  artifacts/linux-release/*.zip
+                  artifacts/linux-release/*.deb
+                  artifacts/linux-release/*.AppImage
+                  artifacts/linux-arm64-release/*.zip
+                  artifacts/linux-arm64-release/*.deb
+                  artifacts/linux-arm64-release/*.AppImage
+                  artifacts/macos-release/*.dmg
+                  artifacts/web-release/*.zip
                 draft: false
                 prerelease: false
                 generate_release_notes: true
