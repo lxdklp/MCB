@@ -1,19 +1,16 @@
 name: Flutter Build
 
 on:
-    push:
-        branches: [main, master]
-        tags:
-            - 'v*'
-    pull_request:
-        branches: [main, master]
-    workflow_dispatch:
-        inputs:
-            skip_release:
-                description: '不创建 Release'
-                required: false
-                default: false
-                type: boolean
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      skip_release:
+        description: '不创建 Release'
+        required: false
+        default: false
+        type: boolean
 
 env:
     FLUTTER_VERSION: '3.38.3'
@@ -190,6 +187,101 @@ jobs:
                   MCB-Windows-*-x64-setup.exe
                 retention-days: 7
 
+    build-windows-arm64:
+        name: Build Windows (ARM64)
+        runs-on: windows-11-arm
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v4
+
+            - name: Check Windows ARM64 environment
+              shell: pwsh
+              run: |
+                Write-Host "=== System Info ==="
+                Write-Host "OS: $([System.Environment]::OSVersion.VersionString)"
+                Write-Host "Architecture: $env:PROCESSOR_ARCHITECTURE"
+                Write-Host "Processor: $env:PROCESSOR_IDENTIFIER"
+                Write-Host ""
+                Write-Host "=== Visual Studio Info ==="
+                $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+                if (Test-Path $vswhere) {
+                  & $vswhere -latest -property installationPath
+                  & $vswhere -latest -property installationVersion
+                  Write-Host ""
+                  Write-Host "=== Installed VS Components (ARM64 related) ==="
+                  & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
+                } else {
+                  Write-Host "vswhere not found - Visual Studio may not be installed"
+                }
+
+            - name: Setup Flutter (ARM64)
+              shell: pwsh
+              run: |
+                Write-Host "Cloning Flutter stable channel into $env:USERPROFILE\flutter"
+                git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$env:USERPROFILE\flutter"
+                Write-Host "Adding Flutter to PATH"
+                echo "$env:USERPROFILE\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+                $env:PATH = "$env:USERPROFILE\flutter\bin;$env:PATH"
+                flutter --version
+                flutter precache --windows
+
+            - name: Flutter Doctor
+              run: flutter doctor -v
+
+            - name: Install dependencies
+              run: flutter pub get
+
+            - name: Build Windows ARM64
+              shell: pwsh
+              run: |
+                Write-Host "Attempting to build Windows ARM64..."
+                Write-Host "Note: Flutter ARM64 Windows support may require specific toolchain configuration"
+                # 尝试直接构建 - Flutter 可能会自动检测目标架构
+                # 如果失败, 可能需要额外的 CMake/msbuild 参数
+                flutter build windows --release
+                # 检查输出目录
+                Write-Host "=== Build output check ==="
+                if (Test-Path "build/windows/arm64/runner/Release") {
+                  Write-Host "Found ARM64 build output"
+                  Get-ChildItem -Path "build/windows/arm64/runner/Release" -Recurse | Select-Object FullName
+                } elseif (Test-Path "build/windows/x64/runner/Release") {
+                  Write-Host "Warning: Found x64 build output instead of ARM64"
+                  Write-Host "Flutter may have fallen back to x64 build"
+                  Get-ChildItem -Path "build/windows/x64/runner/Release" -Recurse | Select-Object FullName
+                } else {
+                  Write-Host "Searching for any Windows build output..."
+                  Get-ChildItem -Path "build/windows" -Recurse -Directory | Where-Object { $_.Name -eq "Release" } | Select-Object FullName
+                }
+
+            - name: Package Windows ARM64 artifacts
+              shell: pwsh
+              run: |
+                $VERSION = (Select-String -Path pubspec.yaml -Pattern '^version:' | ForEach-Object { $_.Line -replace 'version:\s*', '' -replace '\+.*', '' }).Trim()
+                Write-Host "VERSION=$VERSION"
+                # 检测实际的构建输出路径
+                $buildPath = $null
+                if (Test-Path "build/windows/arm64/runner/Release") {
+                  $buildPath = "build/windows/arm64/runner/Release"
+                  $arch = "arm64"
+                } elseif (Test-Path "build/windows/x64/runner/Release") {
+                  Write-Host "Warning: Using x64 build path (ARM64 build may have failed)"
+                  $buildPath = "build/windows/x64/runner/Release"
+                  $arch = "arm64-from-x64"
+                }
+                if ($buildPath) {
+                  Compress-Archive -Path "$buildPath/*" -DestinationPath "MCB-Windows-$VERSION-$arch.zip"
+                  Write-Host "Created MCB-Windows-$VERSION-$arch.zip"
+                } else {
+                  throw "No Windows build output found"
+                }
+
+            - name: Upload Windows ARM64 artifacts
+              uses: actions/upload-artifact@v4
+              with:
+                name: windows-arm64-release
+                path: MCB-Windows-*-arm64*.zip
+                retention-days: 7
+
     build-linux-x64:
         name: Build Linux (x64)
         runs-on: ubuntu-latest
@@ -225,59 +317,38 @@ jobs:
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
                 BUNDLE_DIR=build/linux/x64/release/bundle
-                # Create zip
-                cd $BUNDLE_DIR && zip -r ../../../../MCB-Linux-${VERSION}-x64.zip . && cd -
+                # Create zip in workspace root
+                cd $BUNDLE_DIR && zip -r "$GITHUB_WORKSPACE/MCB-Linux-${VERSION}-x64.zip" . && cd "$GITHUB_WORKSPACE"
                 # Create .deb package
                 mkdir -p deb_pkg/DEBIAN
                 mkdir -p deb_pkg/usr/bin
                 mkdir -p deb_pkg/usr/share/applications
                 mkdir -p deb_pkg/usr/share/mcb
                 cp -r $BUNDLE_DIR/* deb_pkg/usr/share/mcb/
-                cat > deb_pkg/DEBIAN/control <<EOF
-                Package: mcb
-                Version: ${VERSION}
-                Section: utils
-                Priority: optional
-                Architecture: amd64
-                Maintainer: lxdklp
-                Description: MCB Application
-                EOF
-                cat > deb_pkg/usr/bin/mcb <<EOF
-                #!/bin/bash
-                exec /usr/share/mcb/mcb "\$@"
-                EOF
+                printf 'Package: mcb\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: amd64\nMaintainer: lxdklp\nDescription: MCB Application\n' "$VERSION" > deb_pkg/DEBIAN/control
+                printf '#!/bin/bash\nexec /usr/share/mcb/mcb "$@"\n' > deb_pkg/usr/bin/mcb
                 chmod +x deb_pkg/usr/bin/mcb
-                cat > deb_pkg/usr/share/applications/mcb.desktop <<EOF
-                [Desktop Entry]
-                Name=MCB
-                Exec=/usr/share/mcb/mcb
-                Type=Application
-                Categories=Utility;
-                EOF
+                printf '[Desktop Entry]\nName=MCB\nExec=/usr/share/mcb/mcb\nType=Application\nCategories=Utility;\n' > deb_pkg/usr/share/applications/mcb.desktop
                 dpkg-deb --build deb_pkg MCB-Linux-${VERSION}-x64.deb
                 # Create AppImage
                 mkdir -p AppDir/usr/bin
                 mkdir -p AppDir/usr/share/applications
                 mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
                 cp -r $BUNDLE_DIR/* AppDir/usr/bin/
-                cat > AppDir/mcb.desktop <<EOF
-                [Desktop Entry]
-                Name=MCB
-                Exec=mcb
-                Icon=mcb
-                Type=Application
-                Categories=Utility;
-                EOF
+                # Copy icon to AppDir root (required by appimagetool)
+                if [ -f "assets/img/icon/icon.png" ]; then
+                  cp assets/img/icon/icon.png AppDir/mcb.png
+                else
+                  touch AppDir/mcb.png
+                fi
+                cp AppDir/mcb.png AppDir/usr/share/icons/hicolor/256x256/apps/mcb.png
+                printf '[Desktop Entry]\nName=MCB\nExec=mcb\nIcon=mcb\nType=Application\nCategories=Utility;\n' > AppDir/mcb.desktop
                 cp AppDir/mcb.desktop AppDir/usr/share/applications/
-                touch AppDir/usr/share/icons/hicolor/256x256/apps/mcb.png
-                cat > AppDir/AppRun <<EOF
-                #!/bin/bash
-                exec \$APPDIR/usr/bin/mcb "\$@"
-                EOF
+                printf '#!/bin/bash\nexec $APPDIR/usr/bin/mcb "$@"\n' > AppDir/AppRun
                 chmod +x AppDir/AppRun
                 curl -L -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
                 chmod +x appimagetool
-                ARCH=x86_64 ./appimagetool AppDir MCB-Linux-${VERSION}-x64.AppImage || true
+                ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir MCB-Linux-${VERSION}-x64.AppImage
 
             - name: Upload Linux x64 artifacts
               uses: actions/upload-artifact@v4
@@ -327,59 +398,38 @@ jobs:
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
                 BUNDLE_DIR=build/linux/arm64/release/bundle
-                # Create zip
-                cd $BUNDLE_DIR && zip -r ../../../../MCB-Linux-${VERSION}-arm64.zip . && cd -
+                # Create zip in workspace root
+                cd $BUNDLE_DIR && zip -r "$GITHUB_WORKSPACE/MCB-Linux-${VERSION}-arm64.zip" . && cd "$GITHUB_WORKSPACE"
                 # Create .deb package
                 mkdir -p deb_pkg/DEBIAN
                 mkdir -p deb_pkg/usr/bin
                 mkdir -p deb_pkg/usr/share/applications
                 mkdir -p deb_pkg/usr/share/mcb
                 cp -r $BUNDLE_DIR/* deb_pkg/usr/share/mcb/
-                cat > deb_pkg/DEBIAN/control <<EOF
-                Package: mcb
-                Version: ${VERSION}
-                Section: utils
-                Priority: optional
-                Architecture: arm64
-                Maintainer: lxdklp
-                Description: MCB Application
-                EOF
-                cat > deb_pkg/usr/bin/mcb <<EOF
-                #!/bin/bash
-                exec /usr/share/mcb/mcb "\$@"
-                EOF
+                printf 'Package: mcb\nVersion: %s\nSection: utils\nPriority: optional\nArchitecture: arm64\nMaintainer: lxdklp\nDescription: MCB Application\n' "$VERSION" > deb_pkg/DEBIAN/control
+                printf '#!/bin/bash\nexec /usr/share/mcb/mcb "$@"\n' > deb_pkg/usr/bin/mcb
                 chmod +x deb_pkg/usr/bin/mcb
-                cat > deb_pkg/usr/share/applications/mcb.desktop <<EOF
-                [Desktop Entry]
-                Name=MCB
-                Exec=/usr/share/mcb/mcb
-                Type=Application
-                Categories=Utility;
-                EOF
+                printf '[Desktop Entry]\nName=MCB\nExec=/usr/share/mcb/mcb\nType=Application\nCategories=Utility;\n' > deb_pkg/usr/share/applications/mcb.desktop
                 dpkg-deb --build deb_pkg MCB-Linux-${VERSION}-arm64.deb
                 # Create AppImage
                 mkdir -p AppDir/usr/bin
                 mkdir -p AppDir/usr/share/applications
                 mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
                 cp -r $BUNDLE_DIR/* AppDir/usr/bin/
-                cat > AppDir/mcb.desktop <<EOF
-                [Desktop Entry]
-                Name=MCB
-                Exec=mcb
-                Icon=mcb
-                Type=Application
-                Categories=Utility;
-                EOF
+                # Copy icon to AppDir root (required by appimagetool)
+                if [ -f "assets/img/icon/icon.png" ]; then
+                  cp assets/img/icon/icon.png AppDir/mcb.png
+                else
+                  touch AppDir/mcb.png
+                fi
+                cp AppDir/mcb.png AppDir/usr/share/icons/hicolor/256x256/apps/mcb.png
+                printf '[Desktop Entry]\nName=MCB\nExec=mcb\nIcon=mcb\nType=Application\nCategories=Utility;\n' > AppDir/mcb.desktop
                 cp AppDir/mcb.desktop AppDir/usr/share/applications/
-                touch AppDir/usr/share/icons/hicolor/256x256/apps/mcb.png
-                cat > AppDir/AppRun <<EOF
-                #!/bin/bash
-                exec \$APPDIR/usr/bin/mcb "\$@"
-                EOF
+                printf '#!/bin/bash\nexec $APPDIR/usr/bin/mcb "$@"\n' > AppDir/AppRun
                 chmod +x AppDir/AppRun
                 curl -L -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
                 chmod +x appimagetool
-                ARCH=aarch64 ./appimagetool AppDir MCB-Linux-${VERSION}-arm64.AppImage || true
+                ARCH=aarch64 ./appimagetool --appimage-extract-and-run AppDir MCB-Linux-${VERSION}-arm64.AppImage
 
             - name: Upload Linux arm64 artifacts
               uses: actions/upload-artifact@v4
@@ -533,7 +583,7 @@ jobs:
 
     release:
       name: Create Release
-      needs: [build-android, build-windows, build-linux-x64, build-linux-arm64, build-macos, build-web, build-ios]
+      needs: [build-android, build-windows, build-windows-arm64, build-linux-x64, build-linux-arm64, build-macos, build-web, build-ios]
       runs-on: ubuntu-latest
       if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_release != 'true'
       permissions:
