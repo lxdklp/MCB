@@ -67,32 +67,31 @@ jobs:
             - name: Build Android APK (split per abi)
               run: flutter build apk --release --split-per-abi
 
-            - name: Upload Android artifact
+            - name: Prepare Android artifacts per ABI
+              id: prepare_android
+              run: |
+                set -e
+                # extract version from pubspec.yaml (strip +build metadata)
+                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                echo "VERSION=$VERSION" >> $GITHUB_OUTPUT
+                mkdir -p artifacts/android-release
+                APK_DIR=build/app/outputs/flutter-apk
+                if [ -f "$APK_DIR/app-arm64-v8a-release.apk" ]; then
+                  cp "$APK_DIR/app-arm64-v8a-release.apk" "artifacts/MCB-Android-${VERSION}-arm64-v8a.apk"
+                fi
+                if [ -f "$APK_DIR/app-armeabi-v7a-release.apk" ]; then
+                  cp "$APK_DIR/app-armeabi-v7a-release.apk" "artifacts/MCB-Android-${VERSION}-armeabi-v7a.apk"
+                fi
+                if [ -f "$APK_DIR/app-x86_64-release.apk" ]; then
+                  cp "$APK_DIR/app-x86_64-release.apk" "artifacts/MCB-Android-${VERSION}-x86_64.apk"
+                fi
+
+            - name: Upload Android APKs as artifacts
               uses: actions/upload-artifact@v4
               with:
                 name: android-release
-                path: build/app/outputs/flutter-apk/*.apk
+                path: artifacts/MCB-Android-${{ steps.prepare_android.outputs.VERSION }}-*.apk
                 retention-days: 7
-
-            - name: Cleanup keystore (only on trusted events)
-              if: github.event_name != 'pull_request'
-              run: |
-                shred -u android/app/upload-keystore.jks || rm -f android/app/upload-keystore.jks
-                rm -f android/key.properties
-
-    build-ios:
-        name: Build iOS
-        runs-on: macos-latest
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-
-            - name: Setup Flutter
-              uses: subosito/flutter-action@v2
-              with:
-                flutter-version: ${{ env.FLUTTER_VERSION }}
-                channel: 'stable'
-                cache: true
 
             - name: Install dependencies
               run: flutter pub get
@@ -100,16 +99,18 @@ jobs:
             - name: Build iOS (no codesign)
               run: flutter build ios --release --no-codesign
 
-            - name: Zip iOS build
+            - name: Prepare iOS artifact (rename with version)
               run: |
+                set -e
+                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
                 cd build/ios/iphoneos
-                zip -r ../../../ios-release.zip Runner.app
+                zip -r ../../../MCB-iOS-${VERSION}-iphoneos.zip Runner.app
 
             - name: Upload iOS artifact
               uses: actions/upload-artifact@v4
               with:
                 name: ios-release
-                path: ios-release.zip
+                path: MCB-iOS-*.zip
                 retention-days: 7
 
     build-windows:
@@ -132,11 +133,18 @@ jobs:
             - name: Build Windows
               run: flutter build windows --release
 
+            - name: Package Windows artifact (rename with version)
+              run: |
+                set -e
+                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                cd build/windows/x64/runner/Release/
+                zip -r ../../../MCB-Windows-${VERSION}-x64.zip .
+
             - name: Upload Windows artifact
               uses: actions/upload-artifact@v4
               with:
                 name: windows-release
-                path: build/windows/x64/runner/Release/
+                path: MCB-Windows-*.zip
                 retention-days: 7
 
     build-linux:
@@ -164,11 +172,17 @@ jobs:
             - name: Build Linux
               run: flutter build linux --release
 
+            - name: Package Linux artifact (rename with version)
+              run: |
+                set -e
+                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                tar -czvf MCB-Linux-${VERSION}-x64.tar.gz -C build/linux/x64/release/bundle .
+
             - name: Upload Linux artifact
               uses: actions/upload-artifact@v4
               with:
                 name: linux-release
-                path: build/linux/x64/release/bundle/
+                path: MCB-Linux-*.tar.gz
                 retention-days: 7
 
     build-macos:
@@ -191,11 +205,27 @@ jobs:
             - name: Build macOS
               run: flutter build macos --release
 
+            - name: Create macOS .dmg (do not keep dSYM) and rename with version/arch
+              run: |
+                set -e
+                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                APP_DIR=$(ls build/macos/Build/Products/Release/*.app | head -n1)
+                APP_NAME=$(basename "$APP_DIR" .app)
+                ARCH=$(uname -m)
+                OUT_NAME="MCB-macOS-${VERSION}-${ARCH}.dmg"
+                echo "Creating DMG from $APP_DIR -> ${OUT_NAME}"
+                hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$OUT_NAME"
+                # Remove dSYM to avoid keeping symbols in artifacts
+                if [ -d "${APP_DIR}.dSYM" ]; then
+                  echo "Removing dSYM: ${APP_DIR}.dSYM"
+                  rm -rf "${APP_DIR}.dSYM"
+                fi
+
             - name: Upload macOS artifact
               uses: actions/upload-artifact@v4
               with:
                 name: macos-release
-                path: build/macos/Build/Products/Release/*.app
+                path: MCB-macOS-*.dmg
                 retention-days: 7
 
     build-web:
@@ -218,16 +248,23 @@ jobs:
             - name: Build Web
               run: flutter build web --release
 
+            - name: Package Web artifact (rename with version)
+              run: |
+                set -e
+                VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
+                cd build/web
+                zip -r ../../MCB-Web-${VERSION}.zip .
+
             - name: Upload Web artifact
               uses: actions/upload-artifact@v4
               with:
                 name: web-release
-                path: build/web/
+                path: MCB-Web-*.zip
                 retention-days: 7
 
     release:
         name: Create Release
-        needs: [build-android, build-ios, build-windows, build-linux, build-macos, build-web]
+        needs: [build-android, build-windows, build-linux, build-macos, build-web]
         runs-on: ubuntu-latest
         if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_release != 'true'
         permissions:
@@ -238,45 +275,23 @@ jobs:
               with:
                 path: artifacts
 
-            - name: Zip Android releases
+            - name: Collect Android APKs (no zip)
               run: |
-                cd artifacts/android-release
-                zip -r ../../MCB-android-apks.zip .
-
-            - name: Prepare iOS release
-              run: |
-                mv artifacts/ios-release/ios-release.zip MCB-ios.zip
-
-            - name: Zip Windows release
-              run: |
-                cd artifacts/windows-release
-                zip -r ../../MCB-windows-x64.zip .
-
-            - name: Zip Linux release
-              run: |
-                cd artifacts/linux-release
-                tar -czvf ../../MCB-linux-x64.tar.gz .
-
-            - name: Zip macOS release
-              run: |
-                cd artifacts/macos-release
-                zip -r ../../MCB-macos-x64.zip .
-
-            - name: Zip Web release
-              run: |
-                cd artifacts/web-release
-                zip -r ../../MCB-web.zip .
+                set -e
+                mkdir -p artifacts/android-release
+                # Copy any MCB-Android-<version>-*.apk files into the release folder
+                cp artifacts/MCB-Android-*.apk artifacts/android-release/ 2>/dev/null || true
 
             - name: Create Release
               uses: softprops/action-gh-release@v1
               with:
                 files: |
-                  MCB-android-apks.zip
-                  MCB-ios.zip
-                  MCB-windows-x64.zip
-                  MCB-linux-x64.tar.gz
-                  MCB-macos-x64.zip
-                  MCB-web.zip
+                  artifacts/android-release/*.apk
+                  artifacts/MCB-iOS-*.zip
+                  artifacts/MCB-Windows-*.zip
+                  artifacts/MCB-Linux-*.tar.gz
+                  artifacts/MCB-macOS-*.dmg
+                  artifacts/MCB-Web-*.zip
                 draft: false
                 prerelease: false
                 generate_release_notes: true
