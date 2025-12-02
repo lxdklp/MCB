@@ -1,4 +1,4 @@
-name: Flutter Build
+name: Flutter 构建
 
 on:
   push:
@@ -9,7 +9,7 @@ on:
       skip_release:
         description: '不创建 Release'
         required: false
-        default: false
+        default: true
         type: boolean
 
 env:
@@ -17,28 +17,25 @@ env:
 
 jobs:
     build-android:
-        name: Build Android
+        name: 构建 Android
         runs-on: ubuntu-latest
         steps:
-            - name: Checkout
+            - name: 签出代码
               uses: actions/checkout@v4
-
-            - name: Setup Java
+            - name: 配置 Java
               uses: actions/setup-java@v4
               with:
                 distribution: 'zulu'
                 java-version: '17'
-
-            - name: Setup Flutter
+            - name: 配置 Flutter
               uses: subosito/flutter-action@v2
               with:
                 flutter-version: ${{ env.FLUTTER_VERSION }}
                 channel: 'stable'
                 cache: true
-
-            - name: Install dependencies
+            - name: 安装依赖
               run: flutter pub get
-            - name: Decode keystore (only on trusted events)
+            - name: 解码密钥库
               if: github.event_name != 'pull_request'
               env:
                 KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
@@ -46,8 +43,7 @@ jobs:
                 mkdir -p android/app
                 echo "$KEYSTORE_BASE64" | base64 --decode > android/app/upload-keystore.jks
                 chmod 600 android/app/upload-keystore.jks
-
-            - name: Write key.properties (only on trusted events)
+            - name: 写入密钥库
               if: github.event_name != 'pull_request'
               env:
                 KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -60,11 +56,9 @@ jobs:
                 keyAlias=$KEY_ALIAS
                 storeFile=upload-keystore.jks
                 EOF
-
-            - name: Build Android APK (split per abi)
+            - name: 构建 Android 安装包
               run: flutter build apk --release --split-per-abi
-
-            - name: Prepare Android artifacts per ABI
+            - name: 准备 Android 构建产物
               id: prepare_android
               run: |
                 set -e
@@ -82,57 +76,46 @@ jobs:
                 if [ -f "$APK_DIR/app-x86_64-release.apk" ]; then
                   cp "$APK_DIR/app-x86_64-release.apk" "artifacts/MCB-Android-${VERSION}-x86_64.apk"
                 fi
-
-            - name: Upload Android APKs as artifacts
+            - name: 上传 Android 构建产物
               uses: actions/upload-artifact@v4
               with:
                 name: android-release
                 path: artifacts/MCB-Android-${{ steps.prepare_android.outputs.VERSION }}-*.apk
                 retention-days: 7
 
-            - name: Install dependencies
-              run: flutter pub get
-
     build-windows:
-        name: Build Windows
+        name: 构建 Windows
         runs-on: windows-latest
         steps:
-            - name: Checkout
+            - name: 签出代码
               uses: actions/checkout@v4
-
-            - name: Setup Flutter
+            - name: 配置 Flutter
               uses: subosito/flutter-action@v2
               with:
                 flutter-version: ${{ env.FLUTTER_VERSION }}
                 channel: 'stable'
                 cache: true
-
-            - name: Install dependencies
+            - name: 安装依赖
               run: flutter pub get
-
-            - name: Build Windows
+            - name: 构建 Windows 版本
               run: flutter build windows --release
-
-            - name: Package Windows artifacts
+            - name: 打包 Windows 构建产物
               shell: pwsh
               run: |
                 $VERSION = (Select-String -Path pubspec.yaml -Pattern '^version:' | ForEach-Object { $_.Line -replace 'version:\s*', '' -replace '\+.*', '' }).Trim()
                 Write-Host "VERSION=$VERSION"
-                # Create zip
+                # 创建 zip 包
                 Compress-Archive -Path build/windows/x64/runner/Release/* -DestinationPath "MCB-Windows-$VERSION-x64.zip"
-
-            - name: Create Windows Installer (Inno Setup)
+            - name: 使用 Inno Setup 创建 Windows 安装程序
               shell: pwsh
               run: |
                 $VERSION = (Select-String -Path pubspec.yaml -Pattern '^version:' | ForEach-Object { $_.Line -replace 'version:\s*', '' -replace '\+.*', '' }).Trim()
                 Write-Host "VERSION=$VERSION"
-
-                # Install Inno Setup via Chocolatey (pre-installed on windows-latest runners)
+                # 通过 Chocolatey 安装 Inno Setup
                 Write-Host "Installing Inno Setup via Chocolatey..."
                 choco install innosetup -y --no-progress
                 Write-Host "Inno Setup installed"
-
-                # Locate ISCC.exe
+                # 定位 ISCC.exe
                 $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
                 if (-not (Test-Path $isccPath)) {
                   Write-Host "ISCC not at default path, searching..."
@@ -143,8 +126,7 @@ jobs:
                   throw "ISCC.exe not found after Chocolatey install"
                 }
                 Write-Host "Found ISCC at: $isccPath"
-
-                # Create Inno Setup script using string concatenation to avoid YAML parsing issues
+                # 创建 Inno Setup 脚本
                 $issContent = "[Setup]`n"
                 $issContent += "AppName=MCB`n"
                 $issContent += "AppVersion=$VERSION`n"
@@ -166,160 +148,56 @@ jobs:
                 $issContent += "`n"
                 $issContent += "[Run]`n"
                 $issContent += "Filename: `"{app}\mcb.exe`"; Description: `"Launch MCB`"; Flags: nowait postinstall skipifsilent`n"
-
                 $issContent | Out-File -FilePath "setup.iss" -Encoding UTF8 -NoNewline
-                Write-Host "Created setup.iss"
-
-                # Run ISCC to build installer
-                Write-Host "Running ISCC.exe to build installer..."
+                Write-Host "创建 setup.iss"
+                # 运行 ISCC.exe 创建安装程序
+                Write-Host "运行 ISCC.exe 创建安装程序..."
                 & "$isccPath" "setup.iss"
                 if ($LASTEXITCODE -ne 0) {
                   throw "ISCC.exe failed with exit code $LASTEXITCODE"
                 }
-                Write-Host "Installer created successfully"
-
-            - name: Upload Windows artifacts
+                Write-Host "安装程序创建成功"
+            - name: 上传 Windows 构建产物
               uses: actions/upload-artifact@v4
               with:
                 name: windows-release
                 path: |
                   MCB-Windows-*-x64.zip
-                  MCB-Windows-*-x64-setup.exe
-                retention-days: 7
-
-    build-windows-arm64:
-        name: Build Windows (ARM64)
-        runs-on: windows-11-arm
-        steps:
-            - name: Checkout
-              uses: actions/checkout@v4
-
-            - name: Check Windows ARM64 environment
-              shell: pwsh
-              run: |
-                Write-Host "=== System Info ==="
-                Write-Host "OS: $([System.Environment]::OSVersion.VersionString)"
-                Write-Host "Architecture: $env:PROCESSOR_ARCHITECTURE"
-                Write-Host "Processor: $env:PROCESSOR_IDENTIFIER"
-                Write-Host ""
-                Write-Host "=== Visual Studio Info ==="
-                $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-                if (Test-Path $vswhere) {
-                  & $vswhere -latest -property installationPath
-                  & $vswhere -latest -property installationVersion
-                  Write-Host ""
-                  Write-Host "=== Installed VS Components (ARM64 related) ==="
-                  & $vswhere -latest -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath
-                } else {
-                  Write-Host "vswhere not found - Visual Studio may not be installed"
-                }
-
-            - name: Setup Flutter (ARM64)
-              shell: pwsh
-              run: |
-                Write-Host "Cloning Flutter stable channel into $env:USERPROFILE\flutter"
-                git clone https://github.com/flutter/flutter.git -b stable --depth 1 "$env:USERPROFILE\flutter"
-                Write-Host "Adding Flutter to PATH"
-                echo "$env:USERPROFILE\flutter\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
-                $env:PATH = "$env:USERPROFILE\flutter\bin;$env:PATH"
-                flutter --version
-                flutter precache --windows
-
-            - name: Flutter Doctor
-              run: flutter doctor -v
-
-            - name: Install dependencies
-              run: flutter pub get
-
-            - name: Build Windows ARM64
-              shell: pwsh
-              run: |
-                Write-Host "Attempting to build Windows ARM64..."
-                Write-Host "Note: Flutter ARM64 Windows support may require specific toolchain configuration"
-                # 尝试直接构建 - Flutter 可能会自动检测目标架构
-                # 如果失败, 可能需要额外的 CMake/msbuild 参数
-                flutter build windows --release
-                # 检查输出目录
-                Write-Host "=== Build output check ==="
-                if (Test-Path "build/windows/arm64/runner/Release") {
-                  Write-Host "Found ARM64 build output"
-                  Get-ChildItem -Path "build/windows/arm64/runner/Release" -Recurse | Select-Object FullName
-                } elseif (Test-Path "build/windows/x64/runner/Release") {
-                  Write-Host "Warning: Found x64 build output instead of ARM64"
-                  Write-Host "Flutter may have fallen back to x64 build"
-                  Get-ChildItem -Path "build/windows/x64/runner/Release" -Recurse | Select-Object FullName
-                } else {
-                  Write-Host "Searching for any Windows build output..."
-                  Get-ChildItem -Path "build/windows" -Recurse -Directory | Where-Object { $_.Name -eq "Release" } | Select-Object FullName
-                }
-
-            - name: Package Windows ARM64 artifacts
-              shell: pwsh
-              run: |
-                $VERSION = (Select-String -Path pubspec.yaml -Pattern '^version:' | ForEach-Object { $_.Line -replace 'version:\s*', '' -replace '\+.*', '' }).Trim()
-                Write-Host "VERSION=$VERSION"
-                # 检测实际的构建输出路径
-                $buildPath = $null
-                if (Test-Path "build/windows/arm64/runner/Release") {
-                  $buildPath = "build/windows/arm64/runner/Release"
-                  $arch = "arm64"
-                } elseif (Test-Path "build/windows/x64/runner/Release") {
-                  Write-Host "Warning: Using x64 build path (ARM64 build may have failed)"
-                  $buildPath = "build/windows/x64/runner/Release"
-                  $arch = "arm64-from-x64"
-                }
-                if ($buildPath) {
-                  Compress-Archive -Path "$buildPath/*" -DestinationPath "MCB-Windows-$VERSION-$arch.zip"
-                  Write-Host "Created MCB-Windows-$VERSION-$arch.zip"
-                } else {
-                  throw "No Windows build output found"
-                }
-
-            - name: Upload Windows ARM64 artifacts
-              uses: actions/upload-artifact@v4
-              with:
-                name: windows-arm64-release
-                path: MCB-Windows-*-arm64*.zip
+                  MCB-Windows-*-x64-installer.exe
                 retention-days: 7
 
     build-linux-x64:
-        name: Build Linux (x64)
+        name: 构建 Linux (x64)
         runs-on: ubuntu-latest
         steps:
-            - name: Checkout
+            - name: 签出代码
               uses: actions/checkout@v4
-
-            - name: Install Linux dependencies
+            - name: 配置 Linux (x64)
               run: |
                 sudo apt-get update
                 sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev
-
-            - name: Setup Flutter
+            - name: 配置 Flutter
               uses: subosito/flutter-action@v2
               with:
                 flutter-version: ${{ env.FLUTTER_VERSION }}
                 channel: 'stable'
                 cache: true
-
-            - name: Install dependencies
+            - name: 安装依赖
               run: flutter pub get
-
-            - name: Build Linux (x64)
+            - name: 构建 Linux (x64) 版本
               run: flutter build linux --release
-
-            - name: Install packaging tools
+            - name: 安装打包工具
               run: |
                 sudo apt-get update
                 sudo apt-get install -y libfuse2 zip
-
-            - name: Package Linux x64 artifacts
+            - name: 打包 Linux (x64) 构建产物
               run: |
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
                 BUNDLE_DIR=build/linux/x64/release/bundle
-                # Create zip in workspace root
+                # 在工作区根目录创建 zip
                 cd $BUNDLE_DIR && zip -r "$GITHUB_WORKSPACE/MCB-Linux-${VERSION}-x64.zip" . && cd "$GITHUB_WORKSPACE"
-                # Create .deb package
+                # 创建 .deb 包
                 mkdir -p deb_pkg/DEBIAN
                 mkdir -p deb_pkg/usr/bin
                 mkdir -p deb_pkg/usr/share/applications
@@ -330,7 +208,7 @@ jobs:
                 chmod +x deb_pkg/usr/bin/mcb
                 printf '[Desktop Entry]\nName=MCB\nExec=/usr/share/mcb/mcb\nType=Application\nCategories=Utility;\n' > deb_pkg/usr/share/applications/mcb.desktop
                 dpkg-deb --build deb_pkg MCB-Linux-${VERSION}-x64.deb
-                # Create AppImage
+                # 创建 AppImage
                 mkdir -p AppDir/usr/bin
                 mkdir -p AppDir/usr/share/applications
                 mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
@@ -349,8 +227,7 @@ jobs:
                 curl -L -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
                 chmod +x appimagetool
                 ARCH=x86_64 ./appimagetool --appimage-extract-and-run AppDir MCB-Linux-${VERSION}-x64.AppImage
-
-            - name: Upload Linux x64 artifacts
+            - name: 上传 Linux (x64) 构建产物
               uses: actions/upload-artifact@v4
               with:
                 name: linux-release
@@ -360,24 +237,17 @@ jobs:
                   MCB-Linux-*-x64.AppImage
                 retention-days: 7
 
-            - name: Show packaged linux files
-              run: |
-                echo "Workspace root listing:" && ls -la || true
-                echo "Matching packaged files:" && ls -la MCB-Linux-* || true
-
     build-linux-arm64:
-        name: Build Linux (arm64)
+        name: 构建 Linux (arm64)
         runs-on: ubuntu-24.04-arm
         steps:
-            - name: Checkout
+            - name: 签出代码
               uses: actions/checkout@v4
-
-            - name: Install Linux dependencies
+            - name: 配置 Linux (arm64)
               run: |
                 sudo apt-get update
                 sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libfuse2
-
-            - name: Setup Flutter (ARM64)
+            - name: 配置 Flutter
               run: |
                 set -e
                 echo "Cloning Flutter stable channel into $HOME/flutter"
@@ -386,21 +256,22 @@ jobs:
                 export PATH="$HOME/flutter/bin:$PATH"
                 flutter --version
                 flutter precache --linux
-
-            - name: Install dependencies
+            - name: 安装依赖
               run: flutter pub get
-
-            - name: Build Linux (arm64)
+            - name: 构建 Linux (arm64) 版本
               run: flutter build linux --release
-
-            - name: Package Linux arm64 artifacts
+            - name: 安装打包工具
+              run: |
+                sudo apt-get update
+                sudo apt-get install -y libfuse2 zip
+            - name: 打包 Linux (arm64) 构建产物
               run: |
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
                 BUNDLE_DIR=build/linux/arm64/release/bundle
-                # Create zip in workspace root
+                # 在工作区根目录创建 zip
                 cd $BUNDLE_DIR && zip -r "$GITHUB_WORKSPACE/MCB-Linux-${VERSION}-arm64.zip" . && cd "$GITHUB_WORKSPACE"
-                # Create .deb package
+                # 创建 .deb 包
                 mkdir -p deb_pkg/DEBIAN
                 mkdir -p deb_pkg/usr/bin
                 mkdir -p deb_pkg/usr/share/applications
@@ -411,7 +282,7 @@ jobs:
                 chmod +x deb_pkg/usr/bin/mcb
                 printf '[Desktop Entry]\nName=MCB\nExec=/usr/share/mcb/mcb\nType=Application\nCategories=Utility;\n' > deb_pkg/usr/share/applications/mcb.desktop
                 dpkg-deb --build deb_pkg MCB-Linux-${VERSION}-arm64.deb
-                # Create AppImage
+                # 创建 AppImage
                 mkdir -p AppDir/usr/bin
                 mkdir -p AppDir/usr/share/applications
                 mkdir -p AppDir/usr/share/icons/hicolor/256x256/apps
@@ -430,8 +301,7 @@ jobs:
                 curl -L -o appimagetool https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-aarch64.AppImage
                 chmod +x appimagetool
                 ARCH=aarch64 ./appimagetool --appimage-extract-and-run AppDir MCB-Linux-${VERSION}-arm64.AppImage
-
-            - name: Upload Linux arm64 artifacts
+            - name: 上传 Linux (arm64) 构建产物
               uses: actions/upload-artifact@v4
               with:
                 name: linux-arm64-release
@@ -441,32 +311,24 @@ jobs:
                   MCB-Linux-*-arm64.AppImage
                 retention-days: 7
 
-            - name: Show packaged linux-arm64 files
-              run: |
-                echo "Workspace root listing:" && ls -la || true
-                echo "Matching packaged files:" && ls -la MCB-Linux-* || true
-
     build-macos:
-        name: Build macOS
+        name: 构建 macOS
         runs-on: macos-latest
         steps:
-            - name: Checkout
+            - name: 签出代码
               uses: actions/checkout@v4
 
-            - name: Setup Flutter
+            - name: 配置 Flutter
               uses: subosito/flutter-action@v2
               with:
                 flutter-version: ${{ env.FLUTTER_VERSION }}
                 channel: 'stable'
                 cache: true
-
-            - name: Install dependencies
+            - name: 安装依赖
               run: flutter pub get
-
-            - name: Build macOS
+            - name: 构建 macOS 版本
               run: flutter build macos --release
-
-            - name: Create dmg
+            - name: 创建 dmg 镜像
               run: |
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
@@ -474,7 +336,7 @@ jobs:
                 echo "Looking for .app in: $RELEASE_DIR"
                 echo "Release dir contents:"
                 ls -la "$RELEASE_DIR" || true
-                # Use find to locate .app bundle (directory)
+                # 查找 .app 包
                 APP_DIR=$(find "$RELEASE_DIR" -maxdepth 1 -name "*.app" -type d | head -n1)
                 if [ -z "$APP_DIR" ]; then
                   echo "No .app found via find. Trying known paths..."
@@ -493,7 +355,7 @@ jobs:
                 APP_NAME=$(basename "$APP_DIR" .app)
                 OUT_NAME="MCB-macOS-${VERSION}.dmg"
                 echo "Creating DMG: $OUT_NAME"
-                # Create a staging folder with .app and Applications symlink for drag-to-install
+                # 创建一个暂存文件夹
                 DMG_STAGE="dmg_stage"
                 mkdir -p "$DMG_STAGE"
                 cp -R "$APP_DIR" "$DMG_STAGE/"
@@ -502,8 +364,7 @@ jobs:
                 ls -la "$DMG_STAGE"
                 hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$OUT_NAME"
                 rm -rf "$DMG_STAGE"
-
-            - name: Upload macOS artifact
+            - name: 上传 macOS 构建产物
               uses: actions/upload-artifact@v4
               with:
                 name: macos-release
@@ -511,33 +372,28 @@ jobs:
                 retention-days: 7
 
     build-web:
-        name: Build Web
+        name: 构建 Web
         runs-on: ubuntu-latest
         steps:
-            - name: Checkout
+            - name: 签出代码
               uses: actions/checkout@v4
-
-            - name: Setup Flutter
+            - name: 配置 Flutter
               uses: subosito/flutter-action@v2
               with:
                 flutter-version: ${{ env.FLUTTER_VERSION }}
                 channel: 'stable'
                 cache: true
-
-            - name: Install dependencies
+            - name: 安装依赖
               run: flutter pub get
-
-            - name: Build Web
+            - name: 构建 Web 版本
               run: flutter build web --release
-
-            - name: Package Web artifact (rename with version)
+            - name: 打包 Web 构建产物
               run: |
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
                 cd build/web
                 zip -r ../../MCB-Web-${VERSION}.zip .
-
-            - name: Upload Web artifact
+            - name: 上传 Web 构建产物
               uses: actions/upload-artifact@v4
               with:
                 name: web-release
@@ -545,36 +401,31 @@ jobs:
                 retention-days: 7
 
     build-ios:
-        name: Build iOS
+        name: 构建 iOS
         runs-on: macos-latest
         steps:
-            - name: Checkout
+            - name: 签出代码
               uses: actions/checkout@v4
-
-            - name: Setup Flutter
+            - name: 配置 Flutter
               uses: subosito/flutter-action@v2
               with:
                 flutter-version: ${{ env.FLUTTER_VERSION }}
                 channel: 'stable'
                 cache: true
-
-            - name: Install dependencies
+            - name: 安装依赖
               run: flutter pub get
-
-            - name: Build iOS (no codesign)
+            - name: 构建 iOS 版本
               run: flutter build ios --release --no-codesign
-
-            - name: Prepare iOS artifact (rename to .ipa)
+            - name: 打包 iOS 构建产物
               run: |
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-                # Create Payload directory structure for .ipa
+                # 创建 Payload 目录结构以生成 .ipa
                 mkdir -p Payload
                 cp -r build/ios/iphoneos/Runner.app Payload/
                 zip -r "MCB-iOS-${VERSION}.ipa" Payload
                 rm -rf Payload
-
-            - name: Upload iOS artifact
+            - name: 上传 iOS 构建产物
               uses: actions/upload-artifact@v4
               with:
                 name: ios-release
@@ -582,8 +433,8 @@ jobs:
                 retention-days: 7
 
     release:
-      name: Create Release
-      needs: [build-android, build-windows, build-windows-arm64, build-linux-x64, build-linux-arm64, build-macos, build-web, build-ios]
+      name: 创建发布
+      needs: [build-android, build-windows, build-linux-x64, build-linux-arm64, build-macos, build-web, build-ios]
       runs-on: ubuntu-latest
       if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_release != 'true'
       permissions:
@@ -593,15 +444,13 @@ jobs:
               uses: actions/download-artifact@v4
               with:
                 path: artifacts
-
-            - name: Collect Android APKs (no zip)
+            - name: 收集 Android APK
               run: |
                 set -e
                 mkdir -p artifacts/android-release
-                # Copy any MCB-Android-<version>-*.apk files into the release folder
+                # 移动所有 APK 文件到统一目录
                 cp artifacts/MCB-Android-*.apk artifacts/android-release/ 2>/dev/null || true
-
-            - name: Create Release
+            - name: 创建发布
               uses: softprops/action-gh-release@v1
               with:
                 files: |
