@@ -129,98 +129,57 @@ jobs:
               run: |
                 $VERSION = (Select-String -Path pubspec.yaml -Pattern '^version:' | ForEach-Object { $_.Line -replace 'version:\s*', '' -replace '\+.*', '' }).Trim()
                 Write-Host "VERSION=$VERSION"
-                Write-Host "Listing release folder for packaging:" 
-                Get-ChildItem -Path build\windows\x64\runner\Release -Recurse -Force | Select-Object -First 20 | ForEach-Object { Write-Host $_.FullName }
 
-                # Download Inno Setup installer
-                $innourl = 'https://jrsoftware.org/download.php/is.exe'
-                $installer = 'innosetup.exe'
-                Write-Host "Downloading Inno Setup from $innourl"
-                Invoke-WebRequest -Uri $innourl -OutFile $installer -UseBasicParsing -Verbose
-                $size = (Get-Item $installer).Length
-                Write-Host "Downloaded $installer ($size bytes)"
+                # Install Inno Setup via Chocolatey (pre-installed on windows-latest runners)
+                Write-Host "Installing Inno Setup via Chocolatey..."
+                choco install innosetup -y --no-progress
+                Write-Host "Inno Setup installed"
 
-                # Run installer silently with a timeout (2 minutes)
-                Write-Host "Starting Inno Setup installer (silent)"
-                $p = Start-Process -FilePath $installer -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/SP-' -PassThru
-                if ($p -ne $null) {
-                  Write-Host "Installer PID: $($p.Id)"
-                  $finished = $p.WaitForExit(120000)  # wait up to 120000 ms = 2 minutes
-                  if (-not $finished) {
-                    Write-Host "Installer did not exit within timeout; killing process and continuing diagnostics"
-                    try { $p.Kill() } catch { Write-Warning "Failed to kill installer process: $_" }
-                  } else {
-                    Write-Host "Installer exited with code: $($p.ExitCode)"
-                  }
-                } else {
-                  Write-Warning "Failed to start installer process object"
+                # Locate ISCC.exe
+                $isccPath = "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"
+                if (-not (Test-Path $isccPath)) {
+                  Write-Host "ISCC not at default path, searching..."
+                  $found = Get-ChildItem -Path "C:\Program Files (x86)" -Recurse -Filter "ISCC.exe" -ErrorAction SilentlyContinue | Select-Object -First 1
+                  if ($found) { $isccPath = $found.FullName }
                 }
-
-                # Try to find ISCC.exe in common locations
-                $possible = @(
-                  "$Env:ProgramFiles(x86)\Inno Setup 6\ISCC.exe",
-                  "$Env:ProgramFiles\Inno Setup 6\ISCC.exe",
-                  "$Env:ProgramFiles(x86)\Inno Setup 6\ISCC64.exe",
-                  "$Env:ProgramFiles\Inno Setup 6\ISCC64.exe"
-                )
-                $iscc = $null
-                foreach ($p in $possible) {
-                  Write-Host "Checking $p"
-                  if (Test-Path $p) { $iscc = $p; break }
+                if (-not (Test-Path $isccPath)) {
+                  throw "ISCC.exe not found after Chocolatey install"
                 }
-                if (-not $iscc) {
-                  Write-Warning "ISCC.exe not found in common locations. Searching entire Program Files directories (this may take a few seconds)"
-                  Get-ChildItem -Path $Env:ProgramFiles -Recurse -Filter ISCC.exe -ErrorAction SilentlyContinue -Force | ForEach-Object { $iscc = $_.FullName }
-                  if (-not $iscc) {
-                    Get-ChildItem -Path $Env:ProgramFiles(x86) -Recurse -Filter ISCC.exe -ErrorAction SilentlyContinue -Force | ForEach-Object { $iscc = $_.FullName }
-                  }
+                Write-Host "Found ISCC at: $isccPath"
+
+                # Create Inno Setup script using string concatenation to avoid YAML parsing issues
+                $issContent = "[Setup]`n"
+                $issContent += "AppName=MCB`n"
+                $issContent += "AppVersion=$VERSION`n"
+                $issContent += "DefaultDirName={autopf}\MCB`n"
+                $issContent += "DefaultGroupName=MCB`n"
+                $issContent += "OutputDir=.`n"
+                $issContent += "OutputBaseFilename=MCB-Windows-$VERSION-x64-setup`n"
+                $issContent += "Compression=lzma2`n"
+                $issContent += "SolidCompression=yes`n"
+                $issContent += "ArchitecturesAllowed=x64compatible`n"
+                $issContent += "ArchitecturesInstallIn64BitMode=x64compatible`n"
+                $issContent += "`n"
+                $issContent += "[Files]`n"
+                $issContent += "Source: `"build\windows\x64\runner\Release\*`"; DestDir: `"{app}`"; Flags: ignoreversion recursesubdirs`n"
+                $issContent += "`n"
+                $issContent += "[Icons]`n"
+                $issContent += "Name: `"{group}\MCB`"; Filename: `"{app}\mcb.exe`"`n"
+                $issContent += "Name: `"{commondesktop}\MCB`"; Filename: `"{app}\mcb.exe`"`n"
+                $issContent += "`n"
+                $issContent += "[Run]`n"
+                $issContent += "Filename: `"{app}\mcb.exe`"; Description: `"Launch MCB`"; Flags: nowait postinstall skipifsilent`n"
+
+                $issContent | Out-File -FilePath "setup.iss" -Encoding UTF8 -NoNewline
+                Write-Host "Created setup.iss"
+
+                # Run ISCC to build installer
+                Write-Host "Running ISCC.exe to build installer..."
+                & "$isccPath" "setup.iss"
+                if ($LASTEXITCODE -ne 0) {
+                  throw "ISCC.exe failed with exit code $LASTEXITCODE"
                 }
-
-                if (-not $iscc) {
-                  Write-Error "ISCC.exe still not found. Inspecting Program Files dirs for debugging."
-                  Write-Host "ProgramFiles listing:"
-                  Get-ChildItem -Path $Env:ProgramFiles -Force | Select-Object -First 50 | ForEach-Object { Write-Host $_.FullName }
-                  Write-Host "ProgramFiles(x86) listing:"
-                  Get-ChildItem -Path $Env:ProgramFiles(x86) -Force | Select-Object -First 50 | ForEach-Object { Write-Host $_.FullName }
-                  throw "ISCC.exe not found after installer run"
-                }
-
-                Write-Host "Found ISCC at: $iscc"
-
-                # Create Inno Setup script
-                $issContent = @"
-                [Setup]
-                AppName=MCB
-                AppVersion=$VERSION
-                DefaultDirName={autopf}\MCB
-                DefaultGroupName=MCB
-                OutputDir=.
-                OutputBaseFilename=MCB-Windows-$VERSION-x64-setup
-                Compression=lzma2
-                SolidCompression=yes
-                ArchitecturesAllowed=x64compatible
-                ArchitecturesInstallIn64BitMode=x64compatible
-
-                [Files]
-                Source: "build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs
-
-                [Icons]
-                Name: "{group}\MCB"; Filename: "{app}\mcb.exe"
-                Name: "{commondesktop}\MCB"; Filename: "{app}\mcb.exe"
-
-                [Run]
-                Filename: "{app}\mcb.exe"; Description: "Launch MCB"; Flags: nowait postinstall skipifsilent
-                "@
-                $issContent | Out-File -FilePath "setup.iss" -Encoding UTF8
-
-                Write-Host "Running ISCC.exe to build installer (will capture stdout/stderr)"
-                $proc = Start-Process -FilePath $iscc -ArgumentList 'setup.iss' -RedirectStandardOutput 'iscc_out.txt' -RedirectStandardError 'iscc_err.txt' -NoNewWindow -PassThru
-                $proc.WaitForExit()
-                Write-Host "ISCC exit code: $($proc.ExitCode)"
-                Write-Host "=== ISCC stdout ==="
-                Get-Content 'iscc_out.txt' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-                Write-Host "=== ISCC stderr ==="
-                Get-Content 'iscc_err.txt' -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+                Write-Host "Installer created successfully"
 
             - name: Upload Windows artifacts
               uses: actions/upload-artifact@v4
@@ -484,7 +443,15 @@ jobs:
                 APP_NAME=$(basename "$APP_DIR" .app)
                 OUT_NAME="MCB-macOS-${VERSION}.dmg"
                 echo "Creating DMG: $OUT_NAME"
-                hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$OUT_NAME"
+                # Create a staging folder with .app and Applications symlink for drag-to-install
+                DMG_STAGE="dmg_stage"
+                mkdir -p "$DMG_STAGE"
+                cp -R "$APP_DIR" "$DMG_STAGE/"
+                ln -s /Applications "$DMG_STAGE/Applications"
+                echo "DMG stage contents:"
+                ls -la "$DMG_STAGE"
+                hdiutil create -volname "$APP_NAME" -srcfolder "$DMG_STAGE" -ov -format UDZO "$OUT_NAME"
+                rm -rf "$DMG_STAGE"
 
             - name: Upload macOS artifact
               uses: actions/upload-artifact@v4
