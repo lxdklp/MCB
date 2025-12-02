@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -5,7 +8,32 @@ plugins {
     id("dev.flutter.flutter-gradle-plugin")
 }
 
+// Load keystore properties if present (do not commit key.properties)
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+if (keystorePropertiesFile.exists()) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
+// Check if keystore file actually exists
+val keystoreFile = if (keystorePropertiesFile.exists()) {
+    val path = keystoreProperties["storeFile"] as? String
+    if (path != null) rootProject.file("app/$path") else null
+} else null
+val useReleaseSigningConfig = keystoreFile?.exists() == true
+
 android {
+    signingConfigs {
+        if (useReleaseSigningConfig) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = keystoreFile
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     namespace = "com.mcb.lxdklp.mcb"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
@@ -32,9 +60,16 @@ android {
 
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // Disable minification by default (adjust as needed)
+            isMinifyEnabled = false
+            // Disable resource shrinking when code shrinking is not enabled
+            isShrinkResources = false
+            // Use release signing config when keystore exists, otherwise fallback to debug
+            signingConfig = if (useReleaseSigningConfig) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }
