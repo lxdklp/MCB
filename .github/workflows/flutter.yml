@@ -32,12 +32,17 @@ jobs:
                 distribution: 'zulu'
                 java-version: '17'
 
-            - name: Setup Flutter
-              uses: subosito/flutter-action@v2
-              with:
-                flutter-version: ${{ env.FLUTTER_VERSION }}
-                channel: 'stable'
-                cache: true
+            - name: Install Flutter (ARM64)
+              run: |
+                set -e
+                echo "Cloning Flutter stable channel into $HOME/flutter"
+                git clone https://github.com/flutter/flutter.git -b stable --depth 1 $HOME/flutter
+                echo "$HOME/flutter/bin" >> $GITHUB_PATH
+                # ensure flutter is available in this step
+                export PATH="$HOME/flutter/bin:$PATH"
+                flutter --version
+                # precache linux artifacts
+                flutter precache --platforms=linux
 
             - name: Install dependencies
               run: flutter pub get
@@ -167,8 +172,8 @@ jobs:
                   MCB-Windows-*-x64-setup.exe
                 retention-days: 7
 
-    build-linux:
-        name: Build Linux
+    build-linux-x64:
+        name: Build Linux x64
         runs-on: ubuntu-latest
         steps:
             - name: Checkout
@@ -189,11 +194,13 @@ jobs:
             - name: Install dependencies
               run: flutter pub get
 
-            - name: Build Linux
+            - name: Build Linux (x64)
               run: flutter build linux --release
 
             - name: Install packaging tools
-              run: sudo apt-get install -y libfuse2
+              run: |
+                sudo apt-get update
+                sudo apt-get install -y libfuse2 zip
 
             - name: Package Linux x64 artifacts
               run: |
@@ -264,6 +271,11 @@ jobs:
                   MCB-Linux-*-x64.AppImage
                 retention-days: 7
 
+            - name: Show packaged linux files
+              run: |
+                echo "Workspace root listing:" && ls -la || true
+                echo "Matching packaged files:" && ls -la MCB-Linux-* || true
+
     build-linux-arm64:
         name: Build Linux (arm64)
         runs-on: ubuntu-24.04-arm
@@ -271,7 +283,7 @@ jobs:
             - name: Checkout
               uses: actions/checkout@v4
 
-            - name: Install Linux dependencies
+            - name: Install Linux  dependencies
               run: |
                 sudo apt-get update
                 sudo apt-get install -y clang cmake ninja-build pkg-config libgtk-3-dev liblzma-dev libstdc++-12-dev libfuse2
@@ -358,6 +370,11 @@ jobs:
                   MCB-Linux-*-arm64.AppImage
                 retention-days: 7
 
+            - name: Show packaged linux-arm64 files
+              run: |
+                echo "Workspace root listing:" && ls -la || true
+                echo "Matching packaged files:" && ls -la MCB-Linux-* || true
+
     build-macos:
         name: Build macOS
         runs-on: macos-latest
@@ -382,17 +399,33 @@ jobs:
               run: |
                 set -e
                 VERSION=$(grep "^version:" pubspec.yaml | head -n1 | sed 's/.*version:[[:space:]]*//; s/+.*//; s/^[[:space:]]*//; s/[[:space:]]*$//')
-                APP_DIR=$(ls build/macos/Build/Products/Release/*.app | head -n1)
+                APP_GLOB=build/macos/Build/Products/Release/*.app
+                echo "Looking for .app under: $APP_GLOB"
+                APP_DIR=$(ls $APP_GLOB 2>/dev/null | head -n1 || true)
+                if [ -z "$APP_DIR" ]; then
+                  echo "No .app found at expected location: $APP_GLOB"
+                  echo "Listing release dir contents:"
+                  ls -la build/macos/Build/Products/Release || true
+                  # try alternate common path
+                  if [ -d build/macos/Build/Products/Release/Runner.app ]; then
+                    APP_DIR=build/macos/Build/Products/Release/Runner.app
+                    echo "Found Runner.app at alternative path: $APP_DIR"
+                  else
+                    echo "Unable to find .app to package. Failing step." >&2
+                    exit 1
+                  fi
+                fi
                 APP_NAME=$(basename "$APP_DIR" .app)
                 ARCH=$(uname -m)
                 OUT_NAME="MCB-macOS-${VERSION}.dmg"
                 echo "Creating DMG from $APP_DIR -> ${OUT_NAME}"
-                hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$OUT_NAME"
-                # Remove dSYM to avoid keeping symbols in artifacts
-                if [ -d "${APP_DIR}.dSYM" ]; then
-                  echo "Removing dSYM: ${APP_DIR}.dSYM"
-                  rm -rf "${APP_DIR}.dSYM"
+                # show .app contents for debugging
+                echo ".app listing:" && ls -la "$APP_DIR" || true
+                if [ ! -e "$APP_DIR" ]; then
+                  echo "ERROR: APP_DIR does not exist: $APP_DIR" >&2
+                  exit 1
                 fi
+                hdiutil create -volname "$APP_NAME" -srcfolder "$APP_DIR" -ov -format UDZO "$OUT_NAME"
 
             - name: Upload macOS artifact
               uses: actions/upload-artifact@v4
@@ -474,7 +507,7 @@ jobs:
 
     release:
       name: Create Release
-      needs: [build-android, build-windows, build-linux, build-linux-arm64, build-macos, build-web, build-ios]
+      needs: [build-android, build-windows, build-linux-x64, build-linux-arm64, build-macos, build-web, build-ios]
       runs-on: ubuntu-latest
       if: startsWith(github.ref, 'refs/tags/v') && github.event.inputs.skip_release != 'true'
       permissions:
