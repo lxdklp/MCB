@@ -1,23 +1,35 @@
 {
     "MicroPython.executeButton": [
-        {
-            "text": "▶",
-            "tooltip": "运行",
-            "alignment": "left",
-            "command": "extension.executeFile",
-            "priority": 3.5
-        }
+      {
+        "text": "▶",
+        "tooltip": "运行",
+        "alignment": "left",
+        "command": "extension.executeFile",
+        "priority": 3.5
+      }
     ],
     "MicroPython.syncButton": [
-        {
-            "text": "$(sync)",
-            "tooltip": "同步",
-            "alignment": "left",
-            "command": "extension.execute",
-            "priority": 4
-        }
+      {
+        "text": "$(sync)",
+        "tooltip": "同步",
+        "alignment": "left",
+        "command": "extension.execute",
+        "priority": 4
+      }
     ],
     "idf.pythonInstallPath": "/usr/bin/python3",
     "cmake.ignoreCMakeListsMissing": true,
-    "java.configuration.updateBuildConfiguration": "automatic"
+    "java.configuration.updateBuildConfiguration": "automatic",
+    "java.project.resourceFilters": [
+    "node_modules",
+    "\\.git",
+    "android"
+  ],
+  "java.import.exclusions": [
+    "**/node_modules/**",
+    "**/.metadata/**",
+    "**/archetype-resources/**",
+    "**/META-INF/maven/**",
+    "**/android/**"
+  ]
 }
